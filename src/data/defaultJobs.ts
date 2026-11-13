@@ -215,7 +215,7 @@ export const DEFAULT_JOBS: JobPosting[] = [
 export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   brandName: 'JSL EMPRESA',
   brandSubtitle: 'Especialista em Logística',
-  legalName: '[Razão Social da Empresa — Configurar no Painel Administrativo]',
+  legalName: 'JSL - EMPRESA · Especialista em Logística',
   cnpj: '52.548.435/0001-79',
   address: 'Rua Doutor Renato Paes de Barros, 1017, Conjunto 91 – Itaim Bibi, São Paulo – SP, CEP: 04530-001',
   institutionalEmail: 'rh.jsl.logistica@gmail.com',
