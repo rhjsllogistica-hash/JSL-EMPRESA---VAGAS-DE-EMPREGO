@@ -185,6 +185,8 @@ export interface UploadedAttachment {
   uploadedAt: string;
 }
 
+export type EntrySource = 'vagas1' | 'vagas2' | 'site_principal';
+
 export interface ApplicationFormState {
   personal: PersonalContactData;
   education: EducationQualificationsData;
@@ -194,6 +196,7 @@ export interface ApplicationFormState {
   roleSpecific: RoleSpecificAnswers;
   safetyAndAccessibility: SafetyAndAccessibilityData;
   attachments: UploadedAttachment[];
+  identityDocumentIds?: string[];
   lgpdConsent: boolean;
   talentPoolConsent: boolean;
 }

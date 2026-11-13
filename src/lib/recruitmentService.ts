@@ -2,6 +2,7 @@ import {
   ApplicationFormState,
   ApplicationStatus,
   ContactMessageInput,
+  EntrySource,
   JobPosting,
   UploadedAttachment,
   WorkExperienceInput,
@@ -28,6 +29,7 @@ export interface AdminApplicationListItem {
   candidateWhatsapp: string;
   candidateCity: string;
   candidateState: string;
+  entrySource: EntrySource;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +53,7 @@ export interface AdminApplicationDetailResponse {
     id: string;
     protocol: string;
     channelPath: '/vagas1' | '/vagas2';
+    entrySource?: EntrySource;
     jobId: string;
     jobTitle: string;
     jobRoleType: string;
@@ -65,6 +68,7 @@ export interface AdminApplicationDetailResponse {
     availability: ApplicationFormState['availability'];
     roleSpecific: ApplicationFormState['roleSpecific'];
     safetyAndAccessibility: ApplicationFormState['safetyAndAccessibility'];
+    identityDocumentIds?: string[];
     lgpdConsent: boolean;
     talentPoolConsent: boolean;
   };
@@ -141,7 +145,8 @@ export async function submitFullApplication(
   form: ApplicationFormState,
   channelPrefix: ChannelPrefix,
   idempotencyKey: string,
-  honeypot = ''
+  honeypot = '',
+  entrySource?: EntrySource
 ): Promise<{
   applicationId: string;
   protocol: string;
@@ -149,7 +154,10 @@ export async function submitFullApplication(
   candidateName: string;
   jobTitle: string;
   channelPath: ChannelPrefix;
+  entrySource: EntrySource;
 }> {
+  const resolvedSource: EntrySource =
+    entrySource || (channelPrefix === '/vagas1' ? 'vagas1' : 'vagas2');
   const res = await fetch('/api/applications', {
     method: 'POST',
     credentials: 'same-origin',
@@ -160,6 +168,7 @@ export async function submitFullApplication(
     body: JSON.stringify({
       honeypot,
       channel: channelPrefix,
+      entrySource: resolvedSource,
       idempotencyKey,
       jobId: selectedJob.id,
       jobTitle: selectedJob.title,
@@ -180,6 +189,7 @@ export async function submitFullApplication(
         category: a.category,
         sha256: a.sha256,
       })),
+      identityDocumentIds: form.identityDocumentIds || [],
       lgpdConsent: form.lgpdConsent,
       talentPoolConsent: form.talentPoolConsent,
     }),
@@ -308,6 +318,16 @@ export async function updateAdminApplication(
   });
   if (!res.ok) {
     throw new Error(await parseErrorResponse(res, 'Erro ao atualizar status.'));
+  }
+}
+
+export async function deleteAdminApplication(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/applications/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    throw new Error(await parseErrorResponse(res, 'Erro ao excluir candidatura.'));
   }
 }
 

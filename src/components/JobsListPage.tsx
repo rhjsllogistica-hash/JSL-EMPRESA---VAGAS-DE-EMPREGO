@@ -38,8 +38,8 @@ export function JobsListPage({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="max-w-3xl mb-8">
-        <p className="text-xs font-semibold tracking-wide text-[#C8102E] mb-2">
-          PORTAL DE VAGAS · JSL EMPRESA
+        <p className="text-xs font-bold tracking-wide text-[#C8102E] mb-2">
+          PORTAL DE VAGAS · JSL - LOGÍSTICA
         </p>
         <h1 className="font-display text-3xl sm:text-4xl font-extrabold text-zinc-950 tracking-tight">
           Vagas disponíveis
@@ -131,7 +131,7 @@ export function JobsListPage({
           {filtered.map((job) => (
             <article
               key={job.id}
-              className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between"
+              className="bg-white border border-zinc-200 border-t-2 border-t-[#C8102E] rounded-2xl p-6 sm:p-7 flex flex-col justify-between shadow-sm hover:shadow-md transition-all"
             >
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-zinc-100">

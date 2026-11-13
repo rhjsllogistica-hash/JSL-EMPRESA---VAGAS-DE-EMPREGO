@@ -301,6 +301,7 @@ const loginSchema = z.object({
 const submitApplicationSchema = z.object({
   honeypot: z.string().max(0, 'Envio bloqueado por proteção antispam.').optional().default(''),
   channel: z.union([z.literal('/vagas1'), z.literal('/vagas2'), z.literal('vagas1'), z.literal('vagas2'), z.literal(1), z.literal(2), z.literal('1'), z.literal('2')]),
+  entrySource: z.enum(['vagas1', 'vagas2', 'site_principal']).optional(),
   idempotencyKey: z.string().trim().min(8).max(128).regex(/^[a-zA-Z0-9_\-]+$/),
   jobId: z.string().min(2).max(128),
   jobTitle: z.string().min(2).max(160),
@@ -340,6 +341,11 @@ const submitApplicationSchema = z.object({
       })
     )
     .max(6)
+    .default([]),
+  identityDocumentIds: z
+    .array(z.string().regex(/^[a-zA-Z0-9_-]+$/))
+    .max(6)
+    .optional()
     .default([]),
   lgpdConsent: z.literal(true, {
     message: 'É necessário confirmar a ciência da Política de Privacidade.',
@@ -755,10 +761,26 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       return jsonResponse({ error: 'Conflito de canal na inscrição.' }, 400);
     }
 
+    if (data.entrySource === 'site_principal' && channelFromBody.tenantId !== 2) {
+      return jsonResponse(
+        { error: 'Candidaturas do site principal devem ser direcionadas exclusivamente ao canal /vagas2.' },
+        400
+      );
+    }
+    if (data.entrySource === 'vagas1' && channelFromBody.tenantId !== 1) {
+      return jsonResponse({ error: 'Origem inconsistente com o canal informado.' }, 400);
+    }
+    if (data.entrySource === 'vagas2' && channelFromBody.tenantId !== 2) {
+      return jsonResponse({ error: 'Origem inconsistente com o canal informado.' }, 400);
+    }
+
+    const entrySource: 'vagas1' | 'vagas2' | 'site_principal' =
+      data.entrySource || (channelFromBody.tenantId === 1 ? 'vagas1' : 'vagas2');
+
     // Verifica idempotência antes de gravar novamente
     const existing = await db
       .prepare(
-        'SELECT id, protocol, created_at, candidate_name, job_title, channel_path FROM applications WHERE tenant_id = ? AND idempotency_key = ?'
+        'SELECT id, protocol, created_at, candidate_name, job_title, channel_path, payload_json FROM applications WHERE tenant_id = ? AND idempotency_key = ?'
       )
       .bind(channelFromBody.tenantId, data.idempotencyKey)
       .first<{
@@ -768,9 +790,24 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
         candidate_name: string;
         job_title: string;
         channel_path: string;
+        payload_json: string;
       }>();
 
     if (existing) {
+      let existingEntrySource: 'vagas1' | 'vagas2' | 'site_principal' =
+        existing.channel_path === '/vagas1' ? 'vagas1' : 'vagas2';
+      try {
+        const parsedExisting = JSON.parse(existing.payload_json) as { entrySource?: string };
+        if (
+          parsedExisting?.entrySource === 'site_principal' ||
+          parsedExisting?.entrySource === 'vagas1' ||
+          parsedExisting?.entrySource === 'vagas2'
+        ) {
+          existingEntrySource = parsedExisting.entrySource;
+        }
+      } catch {
+        // fallback channel_path
+      }
       return jsonResponse(
         {
           applicationId: existing.id,
@@ -779,6 +816,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           candidateName: existing.candidate_name,
           jobTitle: existing.job_title,
           channelPath: existing.channel_path,
+          entrySource: existingEntrySource,
         },
         200
       );
@@ -840,12 +878,14 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
     const nowIso = new Date().toISOString();
 
     const payloadJson = JSON.stringify({
+      entrySource,
       personal: data.personal,
       education: data.education,
       professionalSummary: data.professionalSummary,
       availability: data.availability,
       roleSpecific: data.roleSpecific,
       safetyAndAccessibility: data.safetyAndAccessibility,
+      identityDocumentIds: data.identityDocumentIds || [],
       lgpdConsent: true,
       talentPoolConsent: Boolean(data.talentPoolConsent),
     });
@@ -891,7 +931,9 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           channelFromBody.tenantId,
           '',
           'Recebida',
-          'Candidatura registrada pelo portal.',
+          entrySource === 'site_principal'
+            ? 'Candidatura registrada pelo site principal (direcionada ao canal /vagas2).'
+            : 'Candidatura registrada pelo portal.',
           'sistema',
           nowIso
         ),
@@ -994,6 +1036,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
         candidateName: data.personal.fullName,
         jobTitle: data.jobTitle,
         channelPath: channelFromBody.channelPath,
+        entrySource,
       },
       201
     );
@@ -1077,9 +1120,9 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
 
       const rowsRes = await db
         .prepare(
-          `SELECT id, protocol, job_id, job_title, job_salary_display, status,
+          `SELECT id, channel_path, protocol, job_id, job_title, job_salary_display, status,
                   candidate_name, candidate_email, candidate_phone, candidate_whatsapp,
-                  candidate_city, candidate_state, created_at, updated_at
+                  candidate_city, candidate_state, payload_json, created_at, updated_at
            FROM applications
            WHERE ${whereSql}
            ORDER BY created_at DESC
@@ -1088,6 +1131,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
         .bind(...whereParams, pageSize, offset)
         .all<{
           id: string;
+          channel_path: string;
           protocol: string;
           job_id: string;
           job_title: string;
@@ -1099,6 +1143,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           candidate_whatsapp: string;
           candidate_city: string;
           candidate_state: string;
+          payload_json: string;
           created_at: string;
           updated_at: string;
         }>();
@@ -1126,22 +1171,39 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       }
 
       return jsonResponse({
-        items: (rowsRes.results || []).map((r) => ({
-          id: r.id,
-          protocol: r.protocol,
-          jobId: r.job_id,
-          jobTitle: r.job_title,
-          jobSalaryDisplay: r.job_salary_display,
-          status: r.status,
-          candidateName: r.candidate_name,
-          candidateEmail: r.candidate_email,
-          candidatePhone: r.candidate_phone,
-          candidateWhatsapp: r.candidate_whatsapp,
-          candidateCity: r.candidate_city,
-          candidateState: r.candidate_state,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        })),
+        items: (rowsRes.results || []).map((r) => {
+          let rowEntrySource: 'vagas1' | 'vagas2' | 'site_principal' =
+            r.channel_path === '/vagas1' ? 'vagas1' : 'vagas2';
+          try {
+            const p = JSON.parse(r.payload_json) as { entrySource?: string };
+            if (
+              p?.entrySource === 'site_principal' ||
+              p?.entrySource === 'vagas1' ||
+              p?.entrySource === 'vagas2'
+            ) {
+              rowEntrySource = p.entrySource;
+            }
+          } catch {
+            // fallback channel_path
+          }
+          return {
+            id: r.id,
+            protocol: r.protocol,
+            jobId: r.job_id,
+            jobTitle: r.job_title,
+            jobSalaryDisplay: r.job_salary_display,
+            status: r.status,
+            candidateName: r.candidate_name,
+            candidateEmail: r.candidate_email,
+            candidatePhone: r.candidate_phone,
+            candidateWhatsapp: r.candidate_whatsapp,
+            candidateCity: r.candidate_city,
+            candidateState: r.candidate_state,
+            entrySource: rowEntrySource,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          };
+        }),
         total,
         page,
         pageSize,
@@ -1200,6 +1262,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
 
       const headers = [
         'Protocolo',
+        'Origem',
         'Candidato',
         'E-mail',
         'Telefone',
@@ -1219,6 +1282,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       const csvLines = [headers.map(escapeCsvCell).join(';')];
       for (const r of res.results || []) {
         let payload: {
+          entrySource?: string;
           education?: { educationLevel?: string };
           availability?: {
             travelAvailability?: string;
@@ -1232,9 +1296,17 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           payload = {};
         }
 
+        const originLabel =
+          payload.entrySource === 'site_principal'
+            ? 'Site principal'
+            : session.channelPath === '/vagas1'
+              ? 'Link /vagas1'
+              : 'Link /vagas2';
+
         csvLines.push(
           [
             r.protocol,
+            originLabel,
             r.candidate_name,
             r.candidate_email,
             r.candidate_phone,
@@ -1366,6 +1438,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           id: appRow.id,
           protocol: appRow.protocol,
           channelPath: appRow.channel_path,
+          entrySource: appRow.channel_path === '/vagas1' ? 'vagas1' : 'vagas2',
           jobId: appRow.job_id,
           jobTitle: appRow.job_title,
           jobRoleType: appRow.job_role_type,
@@ -1468,6 +1541,58 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       ]);
 
       return jsonResponse({ ok: true, status: parsed.data.status, updatedAt: nowIso });
+    }
+
+    // 11b. Exclusão definitiva de candidatura (restrita ao próprio tenant, com remoção atômica de anexos/chunks/histórico)
+    if (method === 'DELETE' && detailMatch) {
+      const appId = detailMatch[1];
+      const existing = await db
+        .prepare(
+          'SELECT id, protocol, candidate_name FROM applications WHERE id = ? AND tenant_id = ?'
+        )
+        .bind(appId, session.tenantId)
+        .first<{ id: string; protocol: string; candidate_name: string }>();
+
+      if (!existing) {
+        return jsonResponse({ error: 'Candidatura não encontrada.' }, 404);
+      }
+
+      const nowIso = new Date().toISOString();
+      await db.batch([
+        db
+          .prepare(
+            'DELETE FROM attachment_chunks WHERE attachment_id IN (SELECT id FROM attachments WHERE application_id = ? AND tenant_id = ?)'
+          )
+          .bind(appId, session.tenantId),
+        db
+          .prepare('DELETE FROM attachments WHERE application_id = ? AND tenant_id = ?')
+          .bind(appId, session.tenantId),
+        db
+          .prepare('DELETE FROM application_experiences WHERE application_id = ? AND tenant_id = ?')
+          .bind(appId, session.tenantId),
+        db
+          .prepare('DELETE FROM status_history WHERE application_id = ? AND tenant_id = ?')
+          .bind(appId, session.tenantId),
+        db
+          .prepare('DELETE FROM applications WHERE id = ? AND tenant_id = ?')
+          .bind(appId, session.tenantId),
+        db
+          .prepare(
+            'INSERT INTO audit_logs (id, tenant_id, actor_username, action, target_type, target_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+          )
+          .bind(
+            crypto.randomUUID(),
+            session.tenantId,
+            session.username,
+            'DELETE_APPLICATION',
+            'application',
+            appId,
+            `Protocolo ${existing.protocol} (${existing.candidate_name}) excluído pelo painel.`,
+            nowIso
+          ),
+      ]);
+
+      return jsonResponse({ ok: true, deletedId: appId });
     }
 
     // 12. Download de anexo privado (verifica vínculo com candidatura do próprio tenant)

@@ -7,7 +7,7 @@ export const STANDARD_BENEFITS: string[] = [
   'Previsão de início imediato, sujeita às etapas do processo seletivo',
 ];
 
-export const HERO_IMAGE_PATH = '/src/assets/images/hero_logistics_fleet_1794554549677.jpg';
+export const HERO_IMAGE_PATH = '/assets/aistudio/Venha_Trabalhar_Conosco_na_Log_stica_61ae1d22.png';
 
 export const DEFAULT_JOBS: JobPosting[] = [
   {

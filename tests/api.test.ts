@@ -1014,3 +1014,311 @@ test('Atomic UPSERT RETURNING rate limit enforces strict cap under concurrent bu
   assert.equal(count429, 4, 'As 4 tentativas excedentes devem ser bloqueadas atomicamente com 429');
 });
 
+test('Identity document (front & back) uploaded under qualificacao is persisted in identityDocumentIds and returned in admin detail', async () => {
+  const db = await setupTestDb();
+
+  // Simula upload de documento com foto (PDF) na categoria qualificacao em /vagas1
+  const docBytes = makePdfBytes(2048);
+  const form = new FormData();
+  form.append('channel', '/vagas1');
+  form.append('category', 'qualificacao');
+  form.append('file', new File([docBytes], 'cnh_frente_verso.pdf'));
+
+  const upRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/uploads`, {
+      method: 'POST',
+      headers: { Origin: ORIGIN, 'X-Recruitment-Channel': '/vagas1' },
+      body: form,
+    }),
+    { DB: db }
+  );
+  assert.equal(upRes.status, 201);
+  const uploaded = (await upRes.json()) as {
+    fileId: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    category: string;
+    sha256: string;
+  };
+
+  const submitRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas1',
+        'CF-Connecting-IP': '198.51.100.210',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas1',
+          attachments: [
+            {
+              fileId: uploaded.fileId,
+              originalName: uploaded.originalName,
+              mimeType: uploaded.mimeType,
+              sizeBytes: uploaded.sizeBytes,
+              category: uploaded.category,
+              sha256: uploaded.sha256,
+            },
+          ],
+          identityDocumentIds: [uploaded.fileId],
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(submitRes.status, 201);
+  const { applicationId } = (await submitRes.json()) as { applicationId: string };
+
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.211');
+  const detailRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${applicationId}`, {
+      headers: { Cookie: cookie1 },
+    }),
+    { DB: db }
+  );
+  assert.equal(detailRes.status, 200);
+  const detailData = (await detailRes.json()) as {
+    application: { identityDocumentIds?: string[] };
+    attachments: Array<{ fileId: string; category: string }>;
+  };
+
+  assert.deepEqual(detailData.application.identityDocumentIds, [uploaded.fileId]);
+  assert.equal(detailData.attachments.length, 1);
+  assert.equal(detailData.attachments[0].fileId, uploaded.fileId);
+  assert.equal(detailData.attachments[0].category, 'qualificacao');
+});
+
+test('DELETE /api/admin/applications/:id is tenant-isolated, CSRF-protected, and removes application plus attachments atomically', async () => {
+  const db = await setupTestDb();
+
+  const docBytes = makePdfBytes(200 * 1024);
+  const form = new FormData();
+  form.append('channel', '/vagas1');
+  form.append('category', 'curriculo');
+  form.append('file', new File([docBytes], 'para_excluir.pdf'));
+
+  const upRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/uploads`, {
+      method: 'POST',
+      headers: { Origin: ORIGIN, 'X-Recruitment-Channel': '/vagas1' },
+      body: form,
+    }),
+    { DB: db }
+  );
+  assert.equal(upRes.status, 201);
+  const uploaded = (await upRes.json()) as {
+    fileId: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    category: string;
+    sha256: string;
+  };
+
+  const submitRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas1',
+        'CF-Connecting-IP': '198.51.100.220',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas1',
+          professionalSummary: {
+            hasWorkedBefore: 'Sim',
+            currentlyEmployed: 'Não',
+            totalLogisticsExperience: '1 a 2 anos',
+            salaryExpectation: 'R$ 8.280,00',
+            startAvailability: 'Imediata',
+          },
+          experiences: [
+            {
+              id: 'exp_del_1',
+              companyName: 'Transportadora Sul',
+              role: 'Motorista',
+              startDate: '2023-01-01',
+              endDate: '2024-01-01',
+              isCurrent: false,
+              calculatedYears: 1,
+              calculatedMonths: 0,
+              durationLabel: '1 ano',
+            },
+          ],
+          attachments: [
+            {
+              fileId: uploaded.fileId,
+              originalName: uploaded.originalName,
+              mimeType: uploaded.mimeType,
+              sizeBytes: uploaded.sizeBytes,
+              category: uploaded.category,
+              sha256: uploaded.sha256,
+            },
+          ],
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(submitRes.status, 201);
+  const { applicationId } = (await submitRes.json()) as { applicationId: string };
+
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.221');
+  const cookie2 = await loginAs(db, 'recruiter2', 'test_pass_tenant2', '198.51.100.222');
+
+  // Sem Origin -> 403
+  const noOriginRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${applicationId}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookie1 },
+    }),
+    { DB: db }
+  );
+  assert.equal(noOriginRes.status, 403);
+
+  // Tenant 2 tentando excluir candidatura do Tenant 1 -> 404
+  const crossDeleteRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${applicationId}`, {
+      method: 'DELETE',
+      headers: { Origin: ORIGIN, Cookie: cookie2 },
+    }),
+    { DB: db }
+  );
+  assert.equal(crossDeleteRes.status, 404);
+
+  // Tenant 1 exclui com sucesso -> 200
+  const okDeleteRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${applicationId}`, {
+      method: 'DELETE',
+      headers: { Origin: ORIGIN, Cookie: cookie1 },
+    }),
+    { DB: db }
+  );
+  assert.equal(okDeleteRes.status, 200);
+
+  const [appsCnt, expCnt, attCnt, chunksCnt, histCnt, auditRow] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS cnt FROM applications').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) AS cnt FROM application_experiences').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) AS cnt FROM attachments').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) AS cnt FROM attachment_chunks').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) AS cnt FROM status_history').first<{ cnt: number }>(),
+    db
+      .prepare("SELECT action, target_id FROM audit_logs WHERE action = 'DELETE_APPLICATION' AND target_id = ?")
+      .bind(applicationId)
+      .first<{ action: string; target_id: string }>(),
+  ]);
+
+  assert.equal(appsCnt?.cnt, 0);
+  assert.equal(expCnt?.cnt, 0);
+  assert.equal(attCnt?.cnt, 0);
+  assert.equal(chunksCnt?.cnt, 0);
+  assert.equal(histCnt?.cnt, 0);
+  assert.ok(auditRow, 'Exclusão deve ficar registrada em audit_logs');
+});
+
+test('Main site submissions (entrySource=site_principal) go exclusively to tenant 2 (/vagas2) and expose origin highlight', async () => {
+  const db = await setupTestDb();
+
+  // Tentativa inválida de enviar site_principal para /vagas1 -> 400
+  const invalidRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas1',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas1',
+          entrySource: 'site_principal',
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(invalidRes.status, 400);
+
+  // Envio válido do site principal direcionado ao canal /vagas2
+  const validRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas2',
+        'CF-Connecting-IP': '198.51.100.240',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas2',
+          entrySource: 'site_principal',
+          personal: {
+            ...buildValidApplicationPayload().personal,
+            fullName: 'Candidato Site Principal',
+          },
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(validRes.status, 201);
+  const created = (await validRes.json()) as {
+    applicationId: string;
+    channelPath: string;
+    entrySource: string;
+  };
+  assert.equal(created.channelPath, '/vagas2');
+  assert.equal(created.entrySource, 'site_principal');
+
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.241');
+  const cookie2 = await loginAs(db, 'recruiter2', 'test_pass_tenant2', '198.51.100.242');
+
+  // Tenant 1 NÃO vê candidaturas do site principal
+  const list1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications`, { headers: { Cookie: cookie1 } }),
+    { DB: db }
+  );
+  const list1Data = (await list1.json()) as { items: Array<{ id: string }> };
+  assert.equal(list1Data.items.length, 0);
+
+  // Tenant 2 vê a candidatura marcada como site_principal na listagem, detalhe e CSV
+  const list2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications`, { headers: { Cookie: cookie2 } }),
+    { DB: db }
+  );
+  const list2Data = (await list2.json()) as {
+    items: Array<{ id: string; entrySource: string }>;
+  };
+  assert.equal(list2Data.items.length, 1);
+  assert.equal(list2Data.items[0].id, created.applicationId);
+  assert.equal(list2Data.items[0].entrySource, 'site_principal');
+
+  const detail2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${created.applicationId}`, {
+      headers: { Cookie: cookie2 },
+    }),
+    { DB: db }
+  );
+  const detail2Data = (await detail2.json()) as {
+    application: { entrySource: string };
+  };
+  assert.equal(detail2Data.application.entrySource, 'site_principal');
+
+  const csv2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/export?scope=filtered`, { headers: { Cookie: cookie2 } }),
+    { DB: db }
+  );
+  const csv2Text = await csv2.text();
+  assert.ok(csv2Text.includes('Site principal'));
+});
+
+
+
+

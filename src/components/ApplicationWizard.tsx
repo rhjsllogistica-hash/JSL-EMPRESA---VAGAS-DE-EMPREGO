@@ -1,16 +1,20 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  Camera,
   CheckCircle2,
   Edit3,
   FileText,
+  Loader2,
+  MapPin,
   Plus,
   ShieldCheck,
   Trash2,
   Upload,
 } from 'lucide-react';
+import { lookupCep } from '../lib/cepLookup.ts';
 import { ChannelPrefix } from '../lib/channelRouting.ts';
 import { submitFullApplication, uploadAttachment } from '../lib/recruitmentService.ts';
 import {
@@ -18,17 +22,15 @@ import {
   BR_STATES,
   calculateWorkDuration,
   EDUCATION_LEVELS,
-  educationSchema,
   formatCepBR,
-  formatCurrencyInputBR,
   formatPhoneBR,
-  LOGISTICS_SKILLS,
   personalSchema,
   workExperienceSchema,
 } from '../lib/validation.ts';
 import {
   ApplicationFormState,
   CompanySettings,
+  EntrySource,
   JobPosting,
   UploadedAttachment,
   WorkExperienceInput,
@@ -46,14 +48,10 @@ interface ApplicationWizardProps {
 }
 
 const STEP_TITLES = [
-  'Dados Pessoais e Contato',
-  'Escolaridade e Qualificações',
-  'Histórico Profissional',
-  'Disponibilidade Profissional',
-  'Perguntas da Vaga',
-  'Condições e Segurança',
-  'Currículo e Anexos',
-  'Conferência e Envio',
+  'Seus Dados e Endereço',
+  'Experiência e Vaga',
+  'Documento com Foto e Anexos',
+  'Revisar e Enviar',
 ];
 
 function createEmptyExperience(): WorkExperienceInput {
@@ -94,11 +92,11 @@ function createInitialFormState(): ApplicationFormState {
       number: '',
       complement: '',
       reference: '',
-      deferFullAddress: true,
+      deferFullAddress: false,
     },
     education: {
       educationLevel: '',
-      hasVocationalCourse: '',
+      hasVocationalCourse: 'Não',
       vocationalCourseName: '',
       hasCourseCertificate: '',
       hasLogisticsExperience: '',
@@ -120,7 +118,7 @@ function createInitialFormState(): ApplicationFormState {
       jobScheduleFit: '',
       travelAvailability: '',
       overnightStayAvailability: '',
-      trainingAvailability: '',
+      trainingAvailability: 'Sim',
       startTimeline: '',
       hasOwnTransport: '',
       scheduleLimitations: '',
@@ -133,6 +131,7 @@ function createInitialFormState(): ApplicationFormState {
       accommodationDetails: '',
     },
     attachments: [],
+    identityDocumentIds: [],
     lgpdConsent: false,
     talentPoolConsent: false,
   };
@@ -156,7 +155,11 @@ function OptionCards({
       <legend className="text-sm font-semibold text-zinc-900">
         {label} {required && <span className="text-[#C8102E]">*</span>}
       </legend>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div
+        className={`grid grid-cols-1 ${
+          options.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+        } gap-2.5`}
+      >
         {options.map((opt) => {
           const active = value === opt;
           return (
@@ -194,13 +197,32 @@ export function ApplicationWizard({
   const [stepError, setStepError] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const [idempotencyKey] = useState(() => crypto.randomUUID().replace(/-/g, ''));
-  const [uploading, setUploading] = useState(false);
-  const [uploadCategory, setUploadCategory] = useState<UploadedAttachment['category']>('curriculo');
-  const [uploadError, setUploadError] = useState('');
+
+  // CEP lookup state
+  const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'found' | 'not_found'>('idle');
+  const lastFetchedCepRef = useRef<string>('');
+  const cepAbortRef = useRef<AbortController | null>(null);
+
+  // Upload states
+  const [uploadingIdDoc, setUploadingIdDoc] = useState(false);
+  const [idDocError, setIdDocError] = useState('');
+  const [uploadingExtra, setUploadingExtra] = useState(false);
+  const [extraCategory, setExtraCategory] =
+    useState<UploadedAttachment['category']>('curriculo');
+  const [extraError, setExtraError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const draftKey =
-    selectedJob && channelPrefix ? `jsl_draft_${channelPrefix.slice(1)}_${selectedJob.id}` : null;
+  const effectiveChannel: ChannelPrefix = channelPrefix ?? '/vagas2';
+  const entrySource: EntrySource =
+    channelPrefix === '/vagas1'
+      ? 'vagas1'
+      : channelPrefix === '/vagas2'
+        ? 'vagas2'
+        : 'site_principal';
+
+  const draftKey = selectedJob
+    ? `jsl_draft_v2_${channelPrefix ? channelPrefix.slice(1) : 'principal'}_${selectedJob.id}`
+    : null;
 
   useEffect(() => {
     if (!draftKey) return;
@@ -212,6 +234,7 @@ export function ApplicationWizard({
           ...prev,
           ...parsed,
           attachments: parsed.attachments || [],
+          identityDocumentIds: parsed.identityDocumentIds || [],
         }));
       }
     } catch {
@@ -228,46 +251,72 @@ export function ApplicationWizard({
     }
   }, [draftKey, form]);
 
-  if (!channelPrefix) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
-        <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10 space-y-4">
-          <p className="text-xs font-semibold text-[#C8102E]">CANAL DE INSCRIÇÃO NÃO IDENTIFICADO</p>
-          <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950">
-            Acesse pelo link oficial da campanha para se candidatar
-          </h1>
-          <p className="text-sm text-zinc-600 leading-relaxed">
-            Para garantir o encaminhamento correto da sua ficha ao recrutador responsável, utilize
-            exatamente o endereço recebido no anúncio ou mensagem (por exemplo,{' '}
-            <code className="font-mono-tabular bg-zinc-100 px-1.5 py-0.5 rounded">/vagas1</code> ou{' '}
-            <code className="font-mono-tabular bg-zinc-100 px-1.5 py-0.5 rounded">/vagas2</code>).
-            Nenhuma candidatura é enviada sem canal explícito.
-          </p>
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={() => onNavigate('/vagas')}
-              className="px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
-            >
-              Voltar para o catálogo de vagas
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const triggerCepLookup = async (rawCep: string, force = false) => {
+    const digits = rawCep.replace(/\D/g, '');
+    if (digits.length !== 8) {
+      setCepStatus('idle');
+      return;
+    }
+    if (!force && lastFetchedCepRef.current === digits) {
+      return;
+    }
+
+    lastFetchedCepRef.current = digits;
+    cepAbortRef.current?.abort();
+    const controller = new AbortController();
+    cepAbortRef.current = controller;
+
+    setCepStatus('loading');
+    try {
+      const result = await lookupCep(digits, controller.signal);
+      if (controller.signal.aborted) return;
+
+      if (!result) {
+        setCepStatus('not_found');
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        personal: {
+          ...prev.personal,
+          cep: formatCepBR(result.cep),
+          city: result.city,
+          state: result.state,
+          neighborhood: result.neighborhood || prev.personal.neighborhood,
+          street: result.street || prev.personal.street,
+          deferFullAddress: false,
+        },
+      }));
+      setCepStatus('found');
+    } catch {
+      if (!controller.signal.aborted) {
+        setCepStatus('not_found');
+      }
+    }
+  };
+
+  useEffect(() => {
+    const digits = form.personal.cep.replace(/\D/g, '');
+    if (digits.length === 8 && lastFetchedCepRef.current !== digits) {
+      void triggerCepLookup(digits);
+    } else if (digits.length < 8 && cepStatus !== 'idle') {
+      setCepStatus('idle');
+      lastFetchedCepRef.current = '';
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.personal.cep]);
 
   if (!selectedJob) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
         <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10">
-          <p className="text-xs font-semibold text-[#C8102E] mb-2">SELEÇÃO OBRIGATÓRIA DA VAGA</p>
+          <p className="text-xs font-semibold text-[#C8102E] mb-2">SELEÇÃO DA VAGA</p>
           <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950">
-            Escolha a vaga antes de iniciar sua inscrição
+            Escolha a vaga para começar
           </h1>
           <p className="mt-2 text-sm text-zinc-600">
-            Para adaptar as perguntas específicas da função e registrar corretamente sua candidatura,
-            selecione uma das oportunidades abaixo:
+            Leva poucos minutos. Selecione abaixo a vaga desejada:
           </p>
 
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -292,31 +341,33 @@ export function ApplicationWizard({
   }
 
   const progressPct = Math.round(((step + 1) / STEP_TITLES.length) * 100);
+  const identityDocIds = form.identityDocumentIds || [];
+  const identityAttachments = form.attachments.filter((a) => identityDocIds.includes(a.fileId));
+  const extraAttachments = form.attachments.filter((a) => !identityDocIds.includes(a.fileId));
 
   const validateCurrentStep = (): string => {
     if (step === 0) {
       const parsed = personalSchema.safeParse(form.personal);
-      if (!parsed.success) return parsed.error.issues[0]?.message || 'Verifique os dados pessoais.';
-      return '';
-    }
-    if (step === 1) {
-      const parsed = educationSchema.safeParse(form.education);
-      if (!parsed.success) return parsed.error.issues[0]?.message || 'Verifique sua escolaridade.';
-      if (
-        form.education.hasVocationalCourse === 'Sim' &&
-        !form.education.vocationalCourseName.trim()
-      ) {
-        return 'Informe qual curso profissionalizante realizou.';
+      if (!parsed.success) return parsed.error.issues[0]?.message || 'Verifique seus dados pessoais.';
+      if (!form.personal.cep || form.personal.cep.replace(/\D/g, '').length !== 8) {
+        return 'Informe seu CEP completo (8 dígitos) para localizarmos seu endereço.';
       }
       return '';
     }
-    if (step === 2) {
+
+    if (step === 1) {
+      if (!form.education.educationLevel) {
+        return 'Selecione sua escolaridade.';
+      }
+      if (!form.education.hasLogisticsExperience) {
+        return 'Informe se já possui experiência na área de logística ou transporte.';
+      }
       if (!form.professionalSummary.hasWorkedBefore) {
-        return 'Informe se já trabalhou anteriormente.';
+        return 'Informe se já trabalhou antes ou se é seu primeiro emprego.';
       }
       if (form.professionalSummary.hasWorkedBefore === 'Sim') {
         if (form.experiences.length === 0) {
-          return 'Cadastre ao menos uma experiência profissional.';
+          return 'Informe ao menos uma experiência profissional.';
         }
         for (let i = 0; i < form.experiences.length; i++) {
           const exp = form.experiences[i];
@@ -336,60 +387,53 @@ export function ApplicationWizard({
         }
       }
       if (!form.professionalSummary.startAvailability.trim()) {
-        return 'Informe quando teria disponibilidade para iniciar.';
+        return 'Informe quando pode começar a trabalhar.';
       }
-      return '';
-    }
-    if (step === 3) {
-      const parsed = availabilitySchema.safeParse(form.availability);
-      if (!parsed.success) {
-        return parsed.error.issues[0]?.message || 'Responda todas as perguntas de disponibilidade.';
+
+      const avParsed = availabilitySchema.safeParse(form.availability);
+      if (!avParsed.success) {
+        return 'Responda todas as perguntas de disponibilidade (horários e viagens).';
       }
-      return '';
-    }
-    if (step === 4) {
+
       const r = form.roleSpecific;
       if (selectedJob.roleType === 'motorista_caminhao') {
-        if (!r.cnhCategory || !r.hasValidCnh || !r.truckExperience || !r.truckTravelAvailability || !r.truckOvernightAvailability) {
-          return 'Responda os requisitos obrigatórios para Motorista de Caminhão.';
+        if (!r.cnhCategory || !r.hasValidCnh || !r.truckExperience) {
+          return 'Responda as perguntas da CNH e experiência com caminhões.';
         }
       } else if (selectedJob.roleType === 'motorista_fiorino') {
-        if (!r.hasValidCnhBPlus || !r.utilityVehicleExperience || !r.deliveryExperience || !r.fiorinoTravelAvailability) {
-          return 'Responda os requisitos obrigatórios para Motorista de Fiorino.';
+        if (!r.hasValidCnhBPlus || !r.utilityVehicleExperience) {
+          return 'Responda as perguntas da CNH e experiência com utilitários.';
         }
       } else if (selectedJob.roleType === 'operador_empilhadeira') {
-        if (!r.forkliftTraining || !r.forkliftCertificate || !r.forkliftWorkExperience || !r.forkliftUpdatedLegalTraining) {
-          return 'Responda os requisitos obrigatórios para Operador de Empilhadeira.';
+        if (!r.forkliftUpdatedLegalTraining || !r.forkliftCertificate || !r.forkliftWorkExperience) {
+          return 'Responda as perguntas sobre curso, certificado e experiência com empilhadeira.';
         }
       } else if (selectedJob.roleType === 'auxiliar_logistica') {
-        if (!r.orderPickingExp || !r.stockOrganizationExp || !r.auxSchedule6x1 || !r.manualHandlingSafeLimits) {
+        if (!r.orderPickingExp || !r.auxSchedule6x1) {
           return 'Responda as perguntas específicas para Auxiliar de Logística.';
         }
       } else if (selectedJob.roleType === 'conferente_pacotes') {
-        if (!r.productInspectionExp || !r.parcelIdentificationExp || !r.barcodeScannerExp || !r.conferenteSchedule6x1) {
+        if (!r.productInspectionExp || !r.conferenteSchedule6x1) {
           return 'Responda as perguntas específicas para Conferente de Pacotes.';
         }
       }
       return '';
     }
-    if (step === 5) {
-      if (
-        !form.safetyAndAccessibility.confirmedEssentialTasks ||
-        !form.safetyAndAccessibility.awareSafetyAndTraining
-      ) {
-        return 'Confirme ciência das atividades essenciais e dos procedimentos de segurança.';
+
+    if (step === 2) {
+      if (identityAttachments.length === 0) {
+        return 'Envie uma foto ou PDF do seu documento com foto aberto (frente e verso) para continuar.';
       }
       return '';
     }
-    if (step === 6) {
-      return '';
-    }
-    if (step === 7) {
+
+    if (step === 3) {
       if (!form.lgpdConsent) {
-        return 'Marque a ciência da Política de Privacidade para finalizar sua candidatura.';
+        return 'Marque a confirmação de ciência e autorização para finalizar sua candidatura.';
       }
       return '';
     }
+
     return '';
   };
 
@@ -424,33 +468,81 @@ export function ApplicationWizard({
     });
   };
 
-  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleIdentityDocUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    setIdDocError('');
+    if (form.attachments.length + files.length > 6) {
+      setIdDocError('Limite máximo de 6 arquivos por candidatura atingido.');
+      return;
+    }
+
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) {
+        setIdDocError(`O arquivo "${file.name}" excede o limite máximo de 5 MB.`);
+        return;
+      }
+    }
+
+    setUploadingIdDoc(true);
+    try {
+      const uploadedList: UploadedAttachment[] = [];
+      for (const file of files) {
+        const uploaded = await uploadAttachment(file, 'qualificacao', effectiveChannel);
+        uploadedList.push(uploaded);
+      }
+      setForm((prev) => ({
+        ...prev,
+        attachments: [...prev.attachments, ...uploadedList],
+        identityDocumentIds: [
+          ...(prev.identityDocumentIds || []),
+          ...uploadedList.map((u) => u.fileId),
+        ],
+      }));
+    } catch (err) {
+      setIdDocError(err instanceof Error ? err.message : 'Erro no envio do documento.');
+    } finally {
+      setUploadingIdDoc(false);
+    }
+  };
+
+  const handleExtraFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file || !channelPrefix) return;
+    if (!file) return;
 
-    setUploadError('');
+    setExtraError('');
     if (file.size > 5 * 1024 * 1024) {
-      setUploadError('O arquivo excede o limite máximo de 5 MB.');
+      setExtraError('O arquivo excede o limite máximo de 5 MB.');
       return;
     }
     if (form.attachments.length >= 6) {
-      setUploadError('Limite máximo de 6 arquivos por candidatura atingido.');
+      setExtraError('Limite máximo de 6 arquivos por candidatura atingido.');
       return;
     }
 
-    setUploading(true);
+    setUploadingExtra(true);
     try {
-      const uploaded = await uploadAttachment(file, uploadCategory, channelPrefix);
+      const uploaded = await uploadAttachment(file, extraCategory, effectiveChannel);
       setForm((prev) => ({
         ...prev,
         attachments: [...prev.attachments, uploaded],
       }));
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Erro no envio do arquivo.');
+      setExtraError(err instanceof Error ? err.message : 'Erro no envio do arquivo.');
     } finally {
-      setUploading(false);
+      setUploadingExtra(false);
     }
+  };
+
+  const removeAttachment = (fileId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      attachments: prev.attachments.filter((a) => a.fileId !== fileId),
+      identityDocumentIds: (prev.identityDocumentIds || []).filter((id) => id !== fileId),
+    }));
   };
 
   const handleFinalSubmit = async () => {
@@ -459,22 +551,65 @@ export function ApplicationWizard({
       setStepError(err);
       return;
     }
-    if (!channelPrefix) {
-      setStepError('Canal de inscrição não identificado.');
-      return;
-    }
 
     setStepError('');
     setSubmitting(true);
     try {
       const cleanExperiences =
         form.professionalSummary.hasWorkedBefore === 'Sim' ? form.experiences : [];
+      const payloadToSend: ApplicationFormState = {
+        ...form,
+        experiences: cleanExperiences,
+        personal: {
+          ...form.personal,
+          whatsapp: form.personal.whatsapp || form.personal.phone,
+          deferFullAddress: !form.personal.street && !form.personal.neighborhood,
+        },
+        roleSpecific: {
+          ...form.roleSpecific,
+          ...(selectedJob.roleType === 'motorista_caminhao'
+            ? {
+                truckTravelAvailability:
+                  form.roleSpecific.truckTravelAvailability ||
+                  form.availability.travelAvailability ||
+                  'Sim',
+                truckOvernightAvailability:
+                  form.roleSpecific.truckOvernightAvailability ||
+                  form.availability.overnightStayAvailability ||
+                  'Sim',
+              }
+            : {}),
+          ...(selectedJob.roleType === 'motorista_fiorino'
+            ? {
+                deliveryExperience: form.roleSpecific.deliveryExperience || form.roleSpecific.utilityVehicleExperience || 'Sim',
+                fiorinoTravelAvailability:
+                  form.roleSpecific.fiorinoTravelAvailability ||
+                  form.availability.travelAvailability ||
+                  'Sim',
+              }
+            : {}),
+          ...(selectedJob.roleType === 'auxiliar_logistica'
+            ? {
+                stockOrganizationExp: form.roleSpecific.stockOrganizationExp || form.roleSpecific.orderPickingExp || 'Sim',
+                manualHandlingSafeLimits: form.roleSpecific.manualHandlingSafeLimits || 'Sim',
+              }
+            : {}),
+          ...(selectedJob.roleType === 'conferente_pacotes'
+            ? {
+                parcelIdentificationExp: form.roleSpecific.parcelIdentificationExp || form.roleSpecific.productInspectionExp || 'Sim',
+                barcodeScannerExp: form.roleSpecific.barcodeScannerExp || form.roleSpecific.productInspectionExp || 'Sim',
+              }
+            : {}),
+        },
+      };
+
       const receipt = await submitFullApplication(
         selectedJob,
-        { ...form, experiences: cleanExperiences },
-        channelPrefix,
+        payloadToSend,
+        effectiveChannel,
         idempotencyKey,
-        honeypot
+        honeypot,
+        entrySource
       );
 
       if (draftKey) sessionStorage.removeItem(draftKey);
@@ -490,23 +625,13 @@ export function ApplicationWizard({
     }
   };
 
-  const toggleSkill = (skill: string) => {
-    setForm((prev) => {
-      const exists = prev.education.skills.includes(skill);
-      const skills = exists
-        ? prev.education.skills.filter((s) => s !== skill)
-        : [...prev.education.skills, skill];
-      return { ...prev, education: { ...prev.education, skills } };
-    });
-  };
-
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      {/* Banner da Vaga Selecionada + Progresso */}
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      {/* Banner da Vaga + Barra de Progresso simples (4 etapas) */}
       <div className="bg-zinc-900 text-white rounded-2xl p-5 sm:p-6 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-medium text-zinc-400">Vaga selecionada para inscrição</p>
+            <p className="text-xs font-medium text-zinc-400">Candidatura rápida · Vaga selecionada</p>
             <h1 className="font-display text-xl sm:text-2xl font-extrabold">{selectedJob.title}</h1>
           </div>
           <div className="sm:text-right">
@@ -520,7 +645,7 @@ export function ApplicationWizard({
         <div className="mt-5 pt-4 border-t border-zinc-800">
           <div className="flex items-center justify-between text-xs font-medium text-zinc-300 mb-2">
             <span>
-              Etapa {step + 1} de {STEP_TITLES.length} · {STEP_TITLES[step]}
+              Passo {step + 1} de {STEP_TITLES.length} · {STEP_TITLES[step]}
             </span>
             <span className="tabular-nums">{progressPct}%</span>
           </div>
@@ -533,7 +658,6 @@ export function ApplicationWizard({
         </div>
       </div>
 
-      {/* Erro da etapa */}
       {stepError && (
         <div
           role="alert"
@@ -541,25 +665,22 @@ export function ApplicationWizard({
         >
           <AlertCircle className="w-5 h-5 text-[#C8102E] shrink-0 mt-0.5" aria-hidden="true" />
           <div>
-            <p className="font-bold">Atenção antes de avançar</p>
+            <p className="font-bold">Confira antes de continuar</p>
             <p className="mt-0.5">{stepError}</p>
           </div>
         </div>
       )}
 
-      {/* Conteúdo das Etapas */}
       <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-8 space-y-6">
-        {/* ETAPA 1 — DADOS PESSOAIS E CONTATO */}
+        {/* PASSO 1 — DADOS PESSOAIS + CEP AUTOMÁTICO */}
         {step === 0 && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 1 — Dados Pessoais e Contato
+                1. Seus dados e endereço
               </h2>
-              <p className="mt-1.5 text-sm text-zinc-600 leading-relaxed">
-                <strong>Finalidade da coleta:</strong> utilizaremos estes dados apenas para
-                identificação e contato caso sua candidatura avance no processo seletivo. Não
-                solicitamos CPF, RG, dados bancários ou data de nascimento completa nesta etapa.
+              <p className="mt-1 text-sm text-zinc-600">
+                Preencha seus dados para contato. Ao digitar o CEP, o endereço completa sozinho.
               </p>
             </div>
 
@@ -584,308 +705,268 @@ export function ApplicationWizard({
 
               <div>
                 <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                  Celular / WhatsApp com DDD <span className="text-[#C8102E]">*</span>
+                </label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={form.personal.phone}
+                  onChange={(e) => {
+                    const formatted = formatPhoneBR(e.target.value);
+                    setForm((p) => ({
+                      ...p,
+                      personal: {
+                        ...p.personal,
+                        phone: formatted,
+                        whatsapp: formatted,
+                      },
+                    }));
+                  }}
+                  placeholder="(11) 99999-9999"
+                  className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
                   E-mail <span className="text-[#C8102E]">*</span>
                 </label>
                 <input
                   type="email"
                   value={form.personal.email}
                   onChange={(e) =>
-                    setForm((p) => ({ ...p, personal: { ...p.personal, email: e.target.value } }))
+                    setForm((p) => ({
+                      ...p,
+                      personal: { ...p.personal, email: e.target.value },
+                    }))
                   }
                   placeholder="seuemail@exemplo.com"
                   className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                  Telefone celular com DDD <span className="text-[#C8102E]">*</span>
-                </label>
-                <input
-                  type="tel"
-                  inputMode="tel"
-                  value={form.personal.phone}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      personal: { ...p.personal, phone: formatPhoneBR(e.target.value) },
-                    }))
-                  }
-                  placeholder="(11) 99999-9999"
-                  className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
-                />
+            {/* Buscador automático de CEP */}
+            <div className="pt-4 border-t border-zinc-200 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                    CEP <span className="text-[#C8102E]">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={form.personal.cep}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          personal: { ...p.personal, cep: formatCepBR(e.target.value) },
+                        }))
+                      }
+                      placeholder="00000-000"
+                      className="flex-1 px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void triggerCepLookup(form.personal.cep, true)}
+                      disabled={cepStatus === 'loading' || form.personal.cep.replace(/\D/g, '').length !== 8}
+                      className="px-4 py-3.5 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-40 cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5"
+                    >
+                      {cepStatus === 'loading' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <MapPin className="w-4 h-4" aria-hidden="true" />
+                      )}
+                      Buscar
+                    </button>
+                  </div>
+                  {cepStatus === 'loading' && (
+                    <p className="mt-1.5 text-xs text-zinc-600">Buscando endereço pelo CEP...</p>
+                  )}
+                  {cepStatus === 'found' && (
+                    <p className="mt-1.5 text-xs font-medium text-emerald-700">
+                      Endereço encontrado automaticamente. Confira e informe o número abaixo.
+                    </p>
+                  )}
+                  {cepStatus === 'not_found' && (
+                    <p className="mt-1.5 text-xs text-amber-700">
+                      CEP não encontrado automaticamente. Preencha Cidade e Estado manualmente abaixo.
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                      Cidade <span className="text-[#C8102E]">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.personal.city}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          personal: { ...p.personal, city: e.target.value },
+                        }))
+                      }
+                      placeholder="Ex.: São Paulo"
+                      className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                      UF <span className="text-[#C8102E]">*</span>
+                    </label>
+                    <select
+                      value={form.personal.state}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          personal: { ...p.personal, state: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-3.5 text-base bg-white border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                    >
+                      <option value="">UF</option>
+                      {BR_STATES.map((uf) => (
+                        <option key={uf} value={uf}>
+                          {uf}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                  Número de WhatsApp (caso diferente)
-                </label>
-                <input
-                  type="tel"
-                  inputMode="tel"
-                  value={form.personal.whatsapp}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      personal: { ...p.personal, whatsapp: formatPhoneBR(e.target.value) },
-                    }))
-                  }
-                  placeholder="(11) 99999-9999"
-                  className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
-                />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-4">
+                <div className="sm:col-span-3">
+                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                    Rua / Avenida
+                  </label>
+                  <input
+                    type="text"
+                    value={form.personal.street}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        personal: { ...p.personal, street: e.target.value },
+                      }))
+                    }
+                    placeholder="Preenchida pelo CEP"
+                    className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-zinc-800 mb-1.5">CEP</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={form.personal.cep}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      personal: { ...p.personal, cep: formatCepBR(e.target.value) },
-                    }))
-                  }
-                  placeholder="00000-000"
-                  className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
-                />
-              </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                    Bairro
+                  </label>
+                  <input
+                    type="text"
+                    value={form.personal.neighborhood}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        personal: { ...p.personal, neighborhood: e.target.value },
+                      }))
+                    }
+                    placeholder="Preenchido pelo CEP"
+                    className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                  />
+                </div>
 
+                <div className="sm:col-span-1">
+                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                    Número
+                  </label>
+                  <input
+                    type="text"
+                    value={form.personal.number}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        personal: { ...p.personal, number: e.target.value },
+                      }))
+                    }
+                    placeholder="Nº"
+                    className="w-full px-3 py-3 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PASSO 2 — EXPERIÊNCIA + DISPONIBILIDADE + PERGUNTAS DA VAGA */}
+        {step === 1 && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
+                2. Experiência e perfil para a vaga
+              </h2>
+              <p className="mt-1 text-sm text-zinc-600">
+                Responda de forma simples sobre seus estudos, empregos anteriores e requisitos de{' '}
+                <strong>{selectedJob.title}</strong>.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                  Estado (UF) <span className="text-[#C8102E]">*</span>
+                <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
+                  Escolaridade <span className="text-[#C8102E]">*</span>
                 </label>
                 <select
-                  value={form.personal.state}
+                  value={form.education.educationLevel}
                   onChange={(e) =>
-                    setForm((p) => ({ ...p, personal: { ...p.personal, state: e.target.value } }))
+                    setForm((p) => ({
+                      ...p,
+                      education: { ...p.education, educationLevel: e.target.value },
+                    }))
                   }
-                  className="w-full px-4 py-3.5 text-base bg-white border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                  className="w-full px-4 py-3.5 text-base bg-white border border-zinc-300 rounded-xl"
                 >
-                  <option value="">Selecione o estado</option>
-                  {BR_STATES.map((uf) => (
-                    <option key={uf} value={uf}>
-                      {uf}
+                  <option value="">Selecione...</option>
+                  {EDUCATION_LEVELS.map((lvl) => (
+                    <option key={lvl} value={lvl}>
+                      {lvl}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                  Cidade <span className="text-[#C8102E]">*</span>
+                <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
+                  Quando pode começar? <span className="text-[#C8102E]">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={form.personal.city}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, personal: { ...p.personal, city: e.target.value } }))
-                  }
-                  placeholder="Ex.: Guarulhos"
-                  className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
-                />
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-zinc-200 space-y-4">
-              <div className="flex items-start gap-3 bg-zinc-50 border border-zinc-200 rounded-xl p-4">
-                <input
-                  id="deferAddress"
-                  type="checkbox"
-                  checked={form.personal.deferFullAddress}
+                <select
+                  value={form.professionalSummary.startAvailability}
                   onChange={(e) =>
                     setForm((p) => ({
                       ...p,
-                      personal: { ...p.personal, deferFullAddress: e.target.checked },
-                    }))
-                  }
-                  className="w-5 h-5 mt-0.5 accent-[#C8102E]"
-                />
-                <label htmlFor="deferAddress" className="text-sm text-zinc-700 leading-relaxed">
-                  <strong>Informar apenas Cidade/Estado agora</strong> e completar endereço
-                  detalhado apenas em etapa posterior, caso avance na seleção (recomendado para
-                  privacidade).
-                </label>
-              </div>
-
-              {!form.personal.deferFullAddress && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                      Bairro
-                    </label>
-                    <input
-                      type="text"
-                      value={form.personal.neighborhood}
-                      onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          personal: { ...p.personal, neighborhood: e.target.value },
-                        }))
-                      }
-                      className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                      Rua / Avenida
-                    </label>
-                    <input
-                      type="text"
-                      value={form.personal.street}
-                      onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          personal: { ...p.personal, street: e.target.value },
-                        }))
-                      }
-                      className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                      Número da residência
-                    </label>
-                    <input
-                      type="text"
-                      value={form.personal.number}
-                      onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          personal: { ...p.personal, number: e.target.value },
-                        }))
-                      }
-                      className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                      Complemento
-                    </label>
-                    <input
-                      type="text"
-                      value={form.personal.complement}
-                      onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          personal: { ...p.personal, complement: e.target.value },
-                        }))
-                      }
-                      className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                      Referência do endereço (opcional)
-                    </label>
-                    <input
-                      type="text"
-                      value={form.personal.reference}
-                      onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          personal: { ...p.personal, reference: e.target.value },
-                        }))
-                      }
-                      className="w-full px-4 py-3 text-base border border-zinc-300 rounded-xl"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ETAPA 2 — ESCOLARIDADE E QUALIFICAÇÕES */}
-        {step === 1 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 2 — Escolaridade e Qualificações
-              </h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Informe sua formação e os conhecimentos operacionais que já possui.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                1. Qual seu nível de escolaridade? <span className="text-[#C8102E]">*</span>
-              </label>
-              <select
-                value={form.education.educationLevel}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    education: { ...p.education, educationLevel: e.target.value },
-                  }))
-                }
-                className="w-full px-4 py-3.5 text-base bg-white border border-zinc-300 rounded-xl"
-              >
-                <option value="">Selecione...</option>
-                {EDUCATION_LEVELS.map((lvl) => (
-                  <option key={lvl} value={lvl}>
-                    {lvl}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <OptionCards
-              label="2. Possui algum curso profissionalizante?"
-              required
-              value={form.education.hasVocationalCourse}
-              options={['Sim', 'Não']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  education: {
-                    ...p.education,
-                    hasVocationalCourse: val as 'Sim' | 'Não',
-                  },
-                }))
-              }
-            />
-
-            {form.education.hasVocationalCourse === 'Sim' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-zinc-50 border border-zinc-200 rounded-xl p-4">
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                    3. Qual curso realizou? <span className="text-[#C8102E]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={form.education.vocationalCourseName}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        education: { ...p.education, vocationalCourseName: e.target.value },
-                      }))
-                    }
-                    placeholder="Ex.: Operação de Empilhadeira / Logística / MOPP"
-                    className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <OptionCards
-                  label="4. Possui certificado de conclusão?"
-                  value={form.education.hasCourseCertificate}
-                  options={['Sim', 'Não', 'Em andamento']}
-                  onChange={(val) =>
-                    setForm((p) => ({
-                      ...p,
-                      education: {
-                        ...p.education,
-                        hasCourseCertificate: val as 'Sim' | 'Não' | 'Em andamento',
+                      professionalSummary: {
+                        ...p.professionalSummary,
+                        startAvailability: e.target.value,
+                      },
+                      availability: {
+                        ...p.availability,
+                        startTimeline: e.target.value,
                       },
                     }))
                   }
-                />
+                  className="w-full px-4 py-3.5 text-base bg-white border border-zinc-300 rounded-xl"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="Imediata">Imediata</option>
+                  <option value="Em até 7 dias">Em até 7 dias</option>
+                  <option value="Em até 15 dias">Em até 15 dias</option>
+                  <option value="Aviso prévio (30 dias)">Aviso prévio (30 dias)</option>
+                </select>
               </div>
-            )}
+            </div>
 
             <OptionCards
-              label="5. Possui experiência em transporte ou logística?"
+              label="Já trabalhou com transporte ou logística?"
               required
               value={form.education.hasLogisticsExperience}
               options={['Sim', 'Não']}
@@ -899,64 +980,6 @@ export function ApplicationWizard({
                 }))
               }
             />
-
-            <div>
-              <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                6. Quais atividades profissionais já realizou?
-              </label>
-              <textarea
-                rows={3}
-                value={form.education.performedActivitiesText}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    education: { ...p.education, performedActivitiesText: e.target.value },
-                  }))
-                }
-                placeholder="Descreva resumidamente suas principais atividades em empregos ou tarefas anteriores..."
-                className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
-              />
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-zinc-900 mb-2">
-                7. Possui conhecimentos em: (múltiplas escolhas)
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {LOGISTICS_SKILLS.map((skill) => {
-                  const selected = form.education.skills.includes(skill);
-                  return (
-                    <button
-                      key={skill}
-                      type="button"
-                      onClick={() => toggleSkill(skill)}
-                      aria-pressed={selected}
-                      className={`px-4 py-3 text-sm font-medium rounded-xl border text-left transition-colors min-h-[46px] cursor-pointer ${
-                        selected
-                          ? 'bg-zinc-900 text-white border-zinc-900'
-                          : 'bg-white text-zinc-800 border-zinc-300 hover:border-zinc-400'
-                      }`}
-                    >
-                      {skill}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ETAPA 3 — HISTÓRICO PROFISSIONAL COMPLETO */}
-        {step === 2 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                SUAS EXPERIÊNCIAS PROFISSIONAIS
-              </h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Informe seus vínculos anteriores ou atuais para analisarmos sua trajetória.
-              </p>
-            </div>
 
             <OptionCards
               label="Já trabalhou anteriormente?"
@@ -975,21 +998,17 @@ export function ApplicationWizard({
             />
 
             {form.professionalSummary.hasWorkedBefore === 'Sim' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {form.experiences.map((exp, idx) => {
-                  const duration = calculateWorkDuration(
-                    exp.startDate,
-                    exp.endDate,
-                    exp.isCurrent
-                  );
+                  const duration = calculateWorkDuration(exp.startDate, exp.endDate, exp.isCurrent);
                   return (
                     <div
                       key={exp.id}
-                      className="border border-zinc-300 rounded-2xl p-5 sm:p-6 space-y-5 bg-zinc-50/60"
+                      className="border border-zinc-200 rounded-2xl p-4 sm:p-5 space-y-4 bg-zinc-50/70"
                     >
-                      <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
-                        <h3 className="font-display text-lg font-bold text-zinc-950">
-                          Experiência Profissional {idx + 1}
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-display text-base font-bold text-zinc-950">
+                          Última experiência {form.experiences.length > 1 ? `#${idx + 1}` : ''}
                         </h3>
                         {form.experiences.length > 1 && (
                           <button
@@ -1008,10 +1027,10 @@ export function ApplicationWizard({
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                         <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            1. Nome da empresa <span className="text-[#C8102E]">*</span>
+                          <label className="block text-sm font-semibold text-zinc-800 mb-1">
+                            Nome da empresa <span className="text-[#C8102E]">*</span>
                           </label>
                           <input
                             type="text"
@@ -1019,48 +1038,25 @@ export function ApplicationWizard({
                             onChange={(e) =>
                               updateExperience(idx, { companyName: e.target.value })
                             }
+                            placeholder="Ex.: Transportadora ABC"
                             className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            2. Cargo ocupado <span className="text-[#C8102E]">*</span>
+                          <label className="block text-sm font-semibold text-zinc-800 mb-1">
+                            Cargo <span className="text-[#C8102E]">*</span>
                           </label>
                           <input
                             type="text"
                             value={exp.role}
                             onChange={(e) => updateExperience(idx, { role: e.target.value })}
+                            placeholder="Ex.: Motorista / Conferente"
                             className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            3. Área de atuação
-                          </label>
-                          <input
-                            type="text"
-                            value={exp.area}
-                            onChange={(e) => updateExperience(idx, { area: e.target.value })}
-                            placeholder="Ex.: Transporte, Armazém, Varejo"
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
-                        <div className="flex items-center pt-6">
-                          <label className="inline-flex items-center gap-2.5 text-sm font-semibold text-zinc-900 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={exp.isCurrent}
-                              onChange={(e) =>
-                                updateExperience(idx, { isCurrent: e.target.checked })
-                              }
-                              className="w-5 h-5 accent-[#C8102E]"
-                            />
-                            6. Ainda trabalha nessa empresa?
-                          </label>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            4. Data de admissão <span className="text-[#C8102E]">*</span>
+                          <label className="block text-sm font-semibold text-zinc-800 mb-1">
+                            Data de entrada <span className="text-[#C8102E]">*</span>
                           </label>
                           <input
                             type="date"
@@ -1070,8 +1066,8 @@ export function ApplicationWizard({
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            5. Data de desligamento
+                          <label className="block text-sm font-semibold text-zinc-800 mb-1">
+                            Data de saída
                           </label>
                           <input
                             type="date"
@@ -1083,137 +1079,23 @@ export function ApplicationWizard({
                         </div>
                       </div>
 
-                      {/* TEMPO DE TRABALHO CALCULADO AUTOMATICAMENTE */}
-                      <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                          TEMPO DE TRABALHO (cálculo automático)
-                        </p>
-                        <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <span className="text-xs text-zinc-500 block">Anos completos</span>
-                            <span className="font-mono-tabular text-base font-bold text-zinc-950">
-                              {duration.valid ? duration.years : '—'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-xs text-zinc-500 block">Meses completos</span>
-                            <span className="font-mono-tabular text-base font-bold text-zinc-950">
-                              {duration.valid ? duration.months : '—'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-xs text-zinc-500 block">
-                              Tempo total na empresa
-                            </span>
-                            <span className="font-semibold text-[#C8102E]">
-                              {duration.label}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <OptionCards
-                          label="7. Trabalhou com carteira assinada?"
-                          value={exp.signedCard}
-                          options={['Sim', 'Não']}
-                          onChange={(val) =>
-                            updateExperience(idx, { signedCard: val as 'Sim' | 'Não' })
-                          }
-                        />
-                        <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            8. Último salário mensal bruto (opcional)
-                          </label>
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-800 cursor-pointer">
                           <input
-                            type="text"
-                            inputMode="numeric"
-                            value={exp.lastSalary}
+                            type="checkbox"
+                            checked={exp.isCurrent}
                             onChange={(e) =>
-                              updateExperience(idx, {
-                                lastSalary: formatCurrencyInputBR(e.target.value),
-                              })
+                              updateExperience(idx, { isCurrent: e.target.checked })
                             }
-                            placeholder="R$ 0,00"
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
+                            className="w-4 h-4 accent-[#C8102E]"
                           />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            9. Recebia benefícios? Quais?
-                          </label>
-                          <input
-                            type="text"
-                            value={exp.benefits}
-                            onChange={(e) => updateExperience(idx, { benefits: e.target.value })}
-                            placeholder="Ex.: Vale-refeição, Vale-transporte, Plano de saúde"
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            10. Quais eram suas atividades diárias?
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={exp.dailyActivities}
-                            onChange={(e) =>
-                              updateExperience(idx, { dailyActivities: e.target.value })
-                            }
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            11. Quais responsabilidades possuía?
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={exp.responsibilities}
-                            onChange={(e) =>
-                              updateExperience(idx, { responsibilities: e.target.value })
-                            }
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            12. Trabalhou com veículos ou equipamentos?
-                          </label>
-                          <input
-                            type="text"
-                            value={exp.equipmentUsed}
-                            onChange={(e) =>
-                              updateExperience(idx, { equipmentUsed: e.target.value })
-                            }
-                            placeholder="Ex.: Caminhão Truck, Fiorino, Empilhadeira a gás, Coletor RF"
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            13. Motivo da saída (opcional)
-                          </label>
-                          <input
-                            type="text"
-                            value={exp.leaveReason}
-                            onChange={(e) =>
-                              updateExperience(idx, { leaveReason: e.target.value })
-                            }
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                            14. Deseja acrescentar alguma informação profissional?
-                          </label>
-                          <input
-                            type="text"
-                            value={exp.notes}
-                            onChange={(e) => updateExperience(idx, { notes: e.target.value })}
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                          />
-                        </div>
+                          Ainda trabalho nessa empresa
+                        </label>
+                        {duration.valid && (
+                          <span className="text-xs font-semibold text-[#C8102E]">
+                            Tempo calculado: {duration.label}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -1227,1068 +1109,524 @@ export function ApplicationWizard({
                       experiences: [...p.experiences, createEmptyExperience()],
                     }))
                   }
-                  className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-3.5 text-sm font-bold text-[#C8102E] bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-[#C8102E] bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" aria-hidden="true" />+ ADICIONAR OUTRA EXPERIÊNCIA
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  Adicionar outra experiência (opcional)
                 </button>
               </div>
             )}
 
-            <div className="pt-6 border-t border-zinc-200 space-y-5">
+            {/* Disponibilidade resumida */}
+            <div className="pt-4 border-t border-zinc-200 space-y-5">
               <OptionCards
-                label="Está empregado atualmente?"
-                value={form.professionalSummary.currentlyEmployed}
-                options={['Sim', 'Não']}
-                onChange={(val) =>
+                label="Tem disponibilidade para horários variados, turnos e escala da vaga?"
+                required
+                value={form.availability.jobScheduleFit}
+                options={['Sim', 'Não', 'A combinar']}
+                onChange={(val) => {
+                  const v = val as 'Sim' | 'Não' | 'A combinar';
                   setForm((p) => ({
                     ...p,
-                    professionalSummary: {
-                      ...p.professionalSummary,
-                      currentlyEmployed: val as 'Sim' | 'Não',
+                    availability: {
+                      ...p.availability,
+                      flexibleHours: v,
+                      shiftWork: v,
+                      weekendsPerSchedule: v,
+                      jobScheduleFit: v,
+                      trainingAvailability: 'Sim',
                     },
-                  }))
-                }
+                  }));
+                }}
               />
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                    Tempo total de experiência em logística
-                  </label>
-                  <input
-                    type="text"
-                    value={form.professionalSummary.totalLogisticsExperience}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        professionalSummary: {
-                          ...p.professionalSummary,
-                          totalLogisticsExperience: e.target.value,
-                        },
-                      }))
-                    }
-                    placeholder="Ex.: 2 anos e 6 meses / Sem experiência"
-                    className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                    Pretensão salarial (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={form.professionalSummary.salaryExpectation}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        professionalSummary: {
-                          ...p.professionalSummary,
-                          salaryExpectation: formatCurrencyInputBR(e.target.value),
-                        },
-                      }))
-                    }
-                    placeholder="R$ 0,00"
-                    className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
-                    Disponibilidade para iniciar <span className="text-[#C8102E]">*</span>
-                  </label>
-                  <select
-                    value={form.professionalSummary.startAvailability}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        professionalSummary: {
-                          ...p.professionalSummary,
-                          startAvailability: e.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Imediata">Imediata</option>
-                    <option value="Em até 7 dias">Em até 7 dias</option>
-                    <option value="Em até 15 dias">Em até 15 dias</option>
-                    <option value="Aviso prévio (30 dias)">Aviso prévio (30 dias)</option>
-                  </select>
-                </div>
-              </div>
-
-              <p className="text-xs text-zinc-500">
-                Nota de transparência: as informações de salário anterior e pretensão salarial não
-                são utilizadas como único critério de remuneração ou eliminação.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ETAPA 4 — DISPONIBILIDADE PROFISSIONAL */}
-        {step === 3 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 4 — Disponibilidade Profissional
-              </h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Informe sua disponibilidade operacional para horários, turnos e rotina da vaga.
-              </p>
-            </div>
-
-            <OptionCards
-              label="1. Possui disponibilidade para trabalhar em horários diferentes?"
-              required
-              value={form.availability.flexibleHours}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: { ...p.availability, flexibleHours: val as 'Sim' | 'Não' | 'A combinar' },
-                }))
-              }
-            />
-
-            <OptionCards
-              label="2. Possui disponibilidade para trabalhar em turnos?"
-              required
-              value={form.availability.shiftWork}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: { ...p.availability, shiftWork: val as 'Sim' | 'Não' | 'A combinar' },
-                }))
-              }
-            />
-
-            <OptionCards
-              label="3. Possui disponibilidade para trabalhar aos finais de semana, conforme a escala?"
-              required
-              value={form.availability.weekendsPerSchedule}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: {
-                    ...p.availability,
-                    weekendsPerSchedule: val as 'Sim' | 'Não' | 'A combinar',
-                  },
-                }))
-              }
-            />
-
-            <OptionCards
-              label="4. Possui disponibilidade para trabalhar na escala da vaga?"
-              required
-              value={form.availability.jobScheduleFit}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: { ...p.availability, jobScheduleFit: val as 'Sim' | 'Não' | 'A combinar' },
-                }))
-              }
-            />
-
-            <OptionCards
-              label="5. Possui disponibilidade para realizar viagens?"
-              required
-              value={form.availability.travelAvailability}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: {
-                    ...p.availability,
-                    travelAvailability: val as 'Sim' | 'Não' | 'A combinar',
-                  },
-                }))
-              }
-            />
-
-            <OptionCards
-              label="6. Possui disponibilidade para eventuais pernoites fora da cidade?"
-              required
-              value={form.availability.overnightStayAvailability}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: {
-                    ...p.availability,
-                    overnightStayAvailability: val as 'Sim' | 'Não' | 'A combinar',
-                  },
-                }))
-              }
-            />
-
-            <OptionCards
-              label="7. Possui disponibilidade para participar de treinamentos?"
-              required
-              value={form.availability.trainingAvailability}
-              options={['Sim', 'Não', 'A combinar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: {
-                    ...p.availability,
-                    trainingAvailability: val as 'Sim' | 'Não' | 'A combinar',
-                  },
-                }))
-              }
-            />
-
-            <div>
-              <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                8. Qual sua disponibilidade para início das atividades?{' '}
-                <span className="text-[#C8102E]">*</span>
-              </label>
-              <input
-                type="text"
-                value={form.availability.startTimeline}
-                onChange={(e) =>
+              <OptionCards
+                label="Tem disponibilidade para viagens e eventuais pernoites quando a operação exigir?"
+                required
+                value={form.availability.travelAvailability}
+                options={['Sim', 'Não', 'A combinar']}
+                onChange={(val) => {
+                  const v = val as 'Sim' | 'Não' | 'A combinar';
                   setForm((p) => ({
                     ...p,
-                    availability: { ...p.availability, startTimeline: e.target.value },
-                  }))
-                }
-                placeholder="Ex.: Imediata / A partir de segunda-feira"
-                className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
+                    availability: {
+                      ...p.availability,
+                      travelAvailability: v,
+                      overnightStayAvailability: v,
+                    },
+                  }));
+                }}
               />
             </div>
 
-            <OptionCards
-              label="9. Possui meio de transporte próprio? (opcional)"
-              value={form.availability.hasOwnTransport}
-              options={['Sim', 'Não', 'Prefiro não informar']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  availability: {
-                    ...p.availability,
-                    hasOwnTransport: val as 'Sim' | 'Não' | 'Prefiro não informar',
-                  },
-                }))
-              }
-            />
+            {/* Perguntas essenciais da vaga selecionada */}
+            <div className="pt-4 border-t border-zinc-200 space-y-5">
+              <h3 className="font-display text-base font-bold text-zinc-950">
+                Requisitos para {selectedJob.title}
+              </h3>
 
-            <div>
-              <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                10. Deseja informar alguma limitação de disponibilidade de horários? (opcional)
-              </label>
-              <textarea
-                rows={2}
-                value={form.availability.scheduleLimitations}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    availability: { ...p.availability, scheduleLimitations: e.target.value },
-                  }))
-                }
-                placeholder="Campo opcional para explicar restrições de horário (ex.: horário de curso)."
-                className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ETAPA 5 — PERGUNTAS ESPECÍFICAS DA VAGA */}
-        {step === 4 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 5 — Perguntas Específicas: {selectedJob.title}
-              </h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Questões adaptadas exclusivamente aos requisitos desta função.
-              </p>
-            </div>
-
-            {selectedJob.roleType === 'motorista_caminhao' && (
-              <div className="space-y-5">
-                <OptionCards
-                  label="Qual categoria da sua CNH? (deverá ser compatível com o veículo utilizado e requisitos legais)"
-                  required
-                  value={form.roleSpecific.cnhCategory || ''}
-                  options={['C', 'E']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, cnhCategory: v as 'C' | 'E' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui CNH válida?"
-                  required
-                  value={form.roleSpecific.hasValidCnh || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, hasValidCnh: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui experiência dirigindo caminhões?"
-                  required
-                  value={form.roleSpecific.truckExperience || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, truckExperience: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                {form.roleSpecific.truckExperience === 'Sim' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                        Se sim, por quanto tempo?
-                      </label>
-                      <input
-                        type="text"
-                        value={form.roleSpecific.truckExperienceDuration || ''}
-                        onChange={(e) =>
-                          setForm((p) => ({
-                            ...p,
-                            roleSpecific: {
-                              ...p.roleSpecific,
-                              truckExperienceDuration: e.target.value,
-                            },
-                          }))
-                        }
-                        placeholder="Ex.: 4 anos"
-                        className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                        Que tipos de caminhões já dirigiu?
-                      </label>
-                      <input
-                        type="text"
-                        value={form.roleSpecific.truckTypesDriven || ''}
-                        onChange={(e) =>
-                          setForm((p) => ({
-                            ...p,
-                            roleSpecific: { ...p.roleSpecific, truckTypesDriven: e.target.value },
-                          }))
-                        }
-                        placeholder="Ex.: Toco, Truck, Carreta, Bitrem"
-                        className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
-                      />
-                    </div>
-                  </div>
-                )}
-                <OptionCards
-                  label="Possui experiência com viagens intermunicipais ou interestaduais?"
-                  value={form.roleSpecific.intercityInterstateTravel || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        intercityInterstateTravel: v as 'Sim' | 'Não',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem disponibilidade para viagens?"
-                  required
-                  value={form.roleSpecific.truckTravelAvailability || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        truckTravelAvailability: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem disponibilidade para pernoitar fora de casa quando a atividade exigir?"
-                  required
-                  value={form.roleSpecific.truckOvernightAvailability || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        truckOvernightAvailability: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem disponibilidade para horários variáveis?"
-                  value={form.roleSpecific.truckFlexibleHours || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        truckFlexibleHours: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                    Possui cursos de transporte relevantes à função? Quais?
-                  </label>
-                  <input
-                    type="text"
-                    value={form.roleSpecific.transportCourses || ''}
-                    onChange={(e) =>
+              {selectedJob.roleType === 'motorista_caminhao' && (
+                <div className="space-y-4">
+                  <OptionCards
+                    label="Categoria da sua CNH"
+                    required
+                    value={form.roleSpecific.cnhCategory || ''}
+                    options={['C', 'E']}
+                    onChange={(v) =>
                       setForm((p) => ({
                         ...p,
-                        roleSpecific: { ...p.roleSpecific, transportCourses: e.target.value },
+                        roleSpecific: { ...p.roleSpecific, cnhCategory: v as 'C' | 'E' },
                       }))
                     }
-                    placeholder="Ex.: MOPP, Direção Defensiva, Cargas Indivisíveis"
-                    className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
                   />
-                </div>
-              </div>
-            )}
-
-            {selectedJob.roleType === 'motorista_fiorino' && (
-              <div className="space-y-5">
-                <OptionCards
-                  label="Possui CNH categoria B ou superior, válida?"
-                  required
-                  value={form.roleSpecific.hasValidCnhBPlus || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, hasValidCnhBPlus: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Já dirigiu veículos utilitários?"
-                  required
-                  value={form.roleSpecific.utilityVehicleExperience || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        utilityVehicleExperience: v as 'Sim' | 'Não',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui experiência com entregas?"
-                  required
-                  value={form.roleSpecific.deliveryExperience || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, deliveryExperience: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Já trabalhou com rotas?"
-                  value={form.roleSpecific.routeExperience || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, routeExperience: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui disponibilidade para viagens?"
-                  required
-                  value={form.roleSpecific.fiorinoTravelAvailability || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        fiorinoTravelAvailability: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui disponibilidade para eventuais pernoites?"
-                  value={form.roleSpecific.fiorinoOvernightAvailability || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        fiorinoOvernightAvailability: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui disponibilidade de horários?"
-                  value={form.roleSpecific.fiorinoHoursAvailability || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        fiorinoHoursAvailability: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-              </div>
-            )}
-
-            {selectedJob.roleType === 'operador_empilhadeira' && (
-              <div className="space-y-5">
-                <OptionCards
-                  label="Possui treinamento ou qualificação para operar empilhadeira?"
-                  required
-                  value={form.roleSpecific.forkliftTraining || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, forkliftTraining: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui certificado?"
-                  required
-                  value={form.roleSpecific.forkliftCertificate || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, forkliftCertificate: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                    Qual tipo de equipamento já operou?
-                  </label>
-                  <input
-                    type="text"
-                    value={form.roleSpecific.forkliftEquipmentTypes || ''}
-                    onChange={(e) =>
+                  <OptionCards
+                    label="Sua CNH está válida e em dia?"
+                    required
+                    value={form.roleSpecific.hasValidCnh || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
                       setForm((p) => ({
                         ...p,
-                        roleSpecific: { ...p.roleSpecific, forkliftEquipmentTypes: e.target.value },
+                        roleSpecific: { ...p.roleSpecific, hasValidCnh: v as 'Sim' | 'Não' },
                       }))
                     }
-                    placeholder="Ex.: Empilhadeira elétrica retrátil, contrabalançada a gás"
-                    className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
                   />
+                  <OptionCards
+                    label="Já tem experiência dirigindo caminhões?"
+                    required
+                    value={form.roleSpecific.truckExperience || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: { ...p.roleSpecific, truckExperience: v as 'Sim' | 'Não' },
+                      }))
+                    }
+                  />
+                  {form.roleSpecific.truckExperience === 'Sim' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-zinc-900 mb-1">
+                          Quanto tempo de experiência? (opcional)
+                        </label>
+                        <input
+                          type="text"
+                          value={form.roleSpecific.truckExperienceDuration || ''}
+                          onChange={(e) =>
+                            setForm((p) => ({
+                              ...p,
+                              roleSpecific: {
+                                ...p.roleSpecific,
+                                truckExperienceDuration: e.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Ex.: 3 anos"
+                          className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-zinc-900 mb-1">
+                          Tipos de caminhões que já dirigiu (opcional)
+                        </label>
+                        <input
+                          type="text"
+                          value={form.roleSpecific.truckTypesDriven || ''}
+                          onChange={(e) =>
+                            setForm((p) => ({
+                              ...p,
+                              roleSpecific: {
+                                ...p.roleSpecific,
+                                truckTypesDriven: e.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Ex.: Truck, Carreta"
+                          className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <OptionCards
-                  label="Possui experiência profissional nessa atividade?"
-                  required
-                  value={form.roleSpecific.forkliftWorkExperience || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        forkliftWorkExperience: v as 'Sim' | 'Não',
-                      },
-                    }))
-                  }
-                />
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                    Qual o tempo de experiência?
-                  </label>
-                  <input
-                    type="text"
-                    value={form.roleSpecific.forkliftExperienceDuration || ''}
-                    onChange={(e) =>
+              )}
+
+              {selectedJob.roleType === 'motorista_fiorino' && (
+                <div className="space-y-4">
+                  <OptionCards
+                    label="Possui CNH categoria B ou superior válida?"
+                    required
+                    value={form.roleSpecific.hasValidCnhBPlus || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: { ...p.roleSpecific, hasValidCnhBPlus: v as 'Sim' | 'Não' },
+                      }))
+                    }
+                  />
+                  <OptionCards
+                    label="Já dirigiu veículo utilitário (Fiorino, Kangoo, Van) ou trabalhou com entregas?"
+                    required
+                    value={form.roleSpecific.utilityVehicleExperience || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
                       setForm((p) => ({
                         ...p,
                         roleSpecific: {
                           ...p.roleSpecific,
-                          forkliftExperienceDuration: e.target.value,
+                          utilityVehicleExperience: v as 'Sim' | 'Não',
                         },
                       }))
                     }
-                    placeholder="Ex.: 2 anos"
-                    className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
                   />
                 </div>
-                <OptionCards
-                  label="Possui treinamento atualizado exigido pela legislação aplicável (ex.: NR-11)?"
-                  required
-                  value={form.roleSpecific.forkliftUpdatedLegalTraining || ''}
-                  options={['Sim', 'Não', 'Em renovação']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        forkliftUpdatedLegalTraining: v as 'Sim' | 'Não' | 'Em renovação',
-                      },
-                    }))
-                  }
-                />
-              </div>
-            )}
+              )}
 
-            {selectedJob.roleType === 'auxiliar_logistica' && (
-              <div className="space-y-5">
-                <OptionCards
-                  label="Possui experiência com separação de pedidos?"
-                  required
-                  value={form.roleSpecific.orderPickingExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, orderPickingExp: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui experiência com organização de estoque?"
-                  required
-                  value={form.roleSpecific.stockOrganizationExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        stockOrganizationExp: v as 'Sim' | 'Não',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Já trabalhou em galpões ou centros de distribuição?"
-                  value={form.roleSpecific.warehouseExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, warehouseExp: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem disponibilidade para escala 6x1?"
-                  required
-                  value={form.roleSpecific.auxSchedule6x1 || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        auxSchedule6x1: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem disponibilidade para atividades operacionais com movimentação manual de mercadorias, respeitados os limites legais e procedimentos de segurança?"
-                  required
-                  value={form.roleSpecific.manualHandlingSafeLimits || ''}
-                  options={['Sim', 'Não', 'Com orientação/adaptação']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        manualHandlingSafeLimits: v as 'Sim' | 'Não' | 'Com orientação/adaptação',
-                      },
-                    }))
-                  }
-                />
-              </div>
-            )}
+              {selectedJob.roleType === 'operador_empilhadeira' && (
+                <div className="space-y-4">
+                  <OptionCards
+                    label="Possui treinamento NR-11 atualizado?"
+                    required
+                    value={form.roleSpecific.forkliftUpdatedLegalTraining || ''}
+                    options={['Sim', 'Não', 'Em renovação']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: {
+                          ...p.roleSpecific,
+                          forkliftTraining: v === 'Não' ? 'Não' : 'Sim',
+                          forkliftUpdatedLegalTraining: v as 'Sim' | 'Não' | 'Em renovação',
+                        },
+                      }))
+                    }
+                  />
+                  <OptionCards
+                    label="Possui certificado de operador de empilhadeira?"
+                    required
+                    value={form.roleSpecific.forkliftCertificate || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: {
+                          ...p.roleSpecific,
+                          forkliftCertificate: v as 'Sim' | 'Não',
+                        },
+                      }))
+                    }
+                  />
+                  <OptionCards
+                    label="Possui experiência profissional operando empilhadeira?"
+                    required
+                    value={form.roleSpecific.forkliftWorkExperience || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: {
+                          ...p.roleSpecific,
+                          forkliftWorkExperience: v as 'Sim' | 'Não',
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              )}
 
-            {selectedJob.roleType === 'conferente_pacotes' && (
-              <div className="space-y-5">
-                <OptionCards
-                  label="Já trabalhou com conferência de produtos?"
-                  required
-                  value={form.roleSpecific.productInspectionExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        productInspectionExp: v as 'Sim' | 'Não',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem experiência com identificação de encomendas?"
-                  required
-                  value={form.roleSpecific.parcelIdentificationExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        parcelIdentificationExp: v as 'Sim' | 'Não',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Já utilizou leitor de código de barras?"
-                  required
-                  value={form.roleSpecific.barcodeScannerExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, barcodeScannerExp: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem experiência com controle de estoque?"
-                  value={form.roleSpecific.inventoryControlExp || ''}
-                  options={['Sim', 'Não']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: { ...p.roleSpecific, inventoryControlExp: v as 'Sim' | 'Não' },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Possui disponibilidade para escala 6x1?"
-                  required
-                  value={form.roleSpecific.conferenteSchedule6x1 || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        conferenteSchedule6x1: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-                <OptionCards
-                  label="Tem disponibilidade para atividades operacionais relacionadas à vaga?"
-                  value={form.roleSpecific.operationalTasksFit || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        operationalTasksFit: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-              </div>
-            )}
+              {selectedJob.roleType === 'auxiliar_logistica' && (
+                <div className="space-y-4">
+                  <OptionCards
+                    label="Possui experiência com separação de pedidos ou organização de estoque?"
+                    required
+                    value={form.roleSpecific.orderPickingExp || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: { ...p.roleSpecific, orderPickingExp: v as 'Sim' | 'Não' },
+                      }))
+                    }
+                  />
+                  <OptionCards
+                    label="Tem disponibilidade para escala 6x1?"
+                    required
+                    value={form.roleSpecific.auxSchedule6x1 || ''}
+                    options={['Sim', 'Não', 'A combinar']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: {
+                          ...p.roleSpecific,
+                          auxSchedule6x1: v as 'Sim' | 'Não' | 'A combinar',
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              )}
 
-            {selectedJob.roleType === 'outro' && (
-              <div className="space-y-4">
-                <OptionCards
-                  label="Possui experiência prévia nas atividades descritas para esta vaga?"
-                  value={form.roleSpecific.operationalTasksFit || ''}
-                  options={['Sim', 'Não', 'A combinar']}
-                  onChange={(v) =>
-                    setForm((p) => ({
-                      ...p,
-                      roleSpecific: {
-                        ...p.roleSpecific,
-                        operationalTasksFit: v as 'Sim' | 'Não' | 'A combinar',
-                      },
-                    }))
-                  }
-                />
-              </div>
-            )}
-          </div>
-        )}
+              {selectedJob.roleType === 'conferente_pacotes' && (
+                <div className="space-y-4">
+                  <OptionCards
+                    label="Já trabalhou com conferência de mercadorias ou leitor de código de barras?"
+                    required
+                    value={form.roleSpecific.productInspectionExp || ''}
+                    options={['Sim', 'Não']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: {
+                          ...p.roleSpecific,
+                          productInspectionExp: v as 'Sim' | 'Não',
+                        },
+                      }))
+                    }
+                  />
+                  <OptionCards
+                    label="Tem disponibilidade para escala 6x1?"
+                    required
+                    value={form.roleSpecific.conferenteSchedule6x1 || ''}
+                    options={['Sim', 'Não', 'A combinar']}
+                    onChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        roleSpecific: {
+                          ...p.roleSpecific,
+                          conferenteSchedule6x1: v as 'Sim' | 'Não' | 'A combinar',
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              )}
 
-        {/* ETAPA 6 — CONDIÇÕES E SEGURANÇA DO TRABALHO */}
-        {step === 5 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 6 — Condições e Segurança do Trabalho
-              </h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Apresentamos as atividades essenciais da função considerando treinamento, limites
-                legais, ergonomia e recursos de acessibilidade.
-              </p>
-            </div>
-
-            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-bold text-zinc-900">
-                Atividades essenciais previstas para {selectedJob.title}
-              </h3>
-              <ul className="space-y-1.5 text-sm text-zinc-700">
-                {selectedJob.activities.map((act, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <span className="text-[#C8102E] font-bold">•</span>
-                    <span>{act}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-zinc-500 pt-2 border-t border-zinc-200">
-                Caso haja convocação para admissão, qualquer exame de aptidão ocupacional exigido
-                por lei será realizado apenas na etapa apropriada por profissional médico habilitado.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <label className="flex items-start gap-3 p-4 border border-zinc-200 rounded-xl cursor-pointer hover:bg-zinc-50">
-                <input
-                  type="checkbox"
-                  checked={form.safetyAndAccessibility.confirmedEssentialTasks}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      safetyAndAccessibility: {
-                        ...p.safetyAndAccessibility,
-                        confirmedEssentialTasks: e.target.checked,
-                      },
-                    }))
-                  }
-                  className="w-5 h-5 mt-0.5 accent-[#C8102E]"
-                />
-                <span className="text-sm text-zinc-800">
-                  Estou ciente das atividades essenciais da vaga e tenho disponibilidade para
-                  realizá-las após receber treinamento e orientações operacionais.{' '}
-                  <span className="text-[#C8102E]">*</span>
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 p-4 border border-zinc-200 rounded-xl cursor-pointer hover:bg-zinc-50">
-                <input
-                  type="checkbox"
-                  checked={form.safetyAndAccessibility.awareSafetyAndTraining}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      safetyAndAccessibility: {
-                        ...p.safetyAndAccessibility,
-                        awareSafetyAndTraining: e.target.checked,
-                      },
-                    }))
-                  }
-                  className="w-5 h-5 mt-0.5 accent-[#C8102E]"
-                />
-                <span className="text-sm text-zinc-800">
-                  Comprometo-me a seguir normas de segurança do trabalho, trânsito, ergonomia e
-                  uso de equipamentos de proteção aplicáveis à função.{' '}
-                  <span className="text-[#C8102E]">*</span>
-                </span>
-              </label>
-            </div>
-
-            <OptionCards
-              label="Deseja solicitar alguma adaptação ou recurso de acessibilidade para participar das etapas do processo seletivo? (Não é necessário informar diagnósticos)"
-              value={form.safetyAndAccessibility.needsProcessAccommodation}
-              options={['Não', 'Sim']}
-              onChange={(val) =>
-                setForm((p) => ({
-                  ...p,
-                  safetyAndAccessibility: {
-                    ...p.safetyAndAccessibility,
-                    needsProcessAccommodation: val as 'Não' | 'Sim',
-                  },
-                }))
-              }
-            />
-
-            {form.safetyAndAccessibility.needsProcessAccommodation === 'Sim' && (
               <div>
-                <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                  Descreva qual adaptação ajudaria na sua participação (ex.: intérprete de Libras,
-                  local acessível, horário específico):
+                <label className="block text-sm font-semibold text-zinc-900 mb-1">
+                  Cursos ou observações extras (opcional)
                 </label>
-                <textarea
-                  rows={2}
-                  value={form.safetyAndAccessibility.accommodationDetails}
-                  onChange={(e) =>
+                <input
+                  type="text"
+                  value={form.education.vocationalCourseName}
+                  onChange={(e) => {
+                    const val = e.target.value;
                     setForm((p) => ({
                       ...p,
-                      safetyAndAccessibility: {
-                        ...p.safetyAndAccessibility,
-                        accommodationDetails: e.target.value,
+                      education: {
+                        ...p.education,
+                        vocationalCourseName: val,
+                        hasVocationalCourse: val.trim() ? 'Sim' : 'Não',
                       },
-                    }))
-                  }
+                    }));
+                  }}
+                  placeholder="Ex.: MOPP, NR-11, Direção Defensiva..."
                   className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl"
                 />
               </div>
-            )}
+            </div>
           </div>
         )}
 
-        {/* ETAPA 7 — CURRÍCULO, FOTOS E ANEXOS */}
-        {step === 6 && (
+        {/* PASSO 3 — DOCUMENTO COM FOTO (FRENTE E VERSO ABERTO) + CURRÍCULO OPCIONAL */}
+        {step === 2 && (
           <div className="space-y-6">
             <div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 7 — Currículo e Anexos de Qualificação
+                3. Documento com Foto (Frente e Verso)
               </h2>
               <p className="mt-1 text-sm text-zinc-600">
-                Envie seu currículo ou comprovantes de cursos e treinamentos relacionados à vaga
-                (opcional, limite de 5 MB por arquivo, até 6 arquivos).
+                Último passo antes de enviar: suba uma foto nítida ou PDF do seu documento com foto
+                aberto mostrando <strong>frente e verso</strong> (RG ou CNH).
               </p>
             </div>
 
-            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-xs text-zinc-600 leading-relaxed">
-              <strong>Armazenamento privado e minimização:</strong> Não é necessário enviar
-              fotografia do rosto, RG ou CPF nesta etapa. Documentos pessoais para contratação
-              serão solicitados apenas em fase posterior de admissão.
+            {/* Aviso transparente de finalidade: verificação de antecedentes e identidade */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 sm:p-5 space-y-2 text-xs sm:text-sm text-zinc-700 leading-relaxed">
+              <div className="flex items-center gap-2 font-bold text-zinc-950">
+                <ShieldCheck className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
+                <span>Como usaremos seu documento</span>
+              </div>
+              <p>
+                Usaremos essas informações e o documento enviado <strong>apenas</strong> para
+                confirmação da sua identidade, análise cadastral e{' '}
+                <strong>verificação de antecedentes criminais</strong> exigida para atuação no
+                transporte e logística, conforme a LGPD. Os arquivos ficam em ambiente privado e
+                restrito ao RH.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+            {/* Caixa principal: Documento com foto frente e verso aberto */}
+            <div className="border-2 border-dashed border-zinc-300 rounded-2xl p-5 sm:p-6 space-y-4 bg-white">
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-zinc-950">
+                  Foto do documento aberto (Frente e Verso — RG ou CNH){' '}
+                  <span className="text-[#C8102E]">*</span>
+                </p>
+                <p className="text-xs text-zinc-600">
+                  Aceitamos JPG, PNG ou PDF (até 5 MB cada). Se o documento for frente e verso
+                  separados, você pode enviar as 2 fotos aqui.
+                </p>
+              </div>
+
+              <label className="flex items-center justify-center gap-2.5 w-full px-5 py-4 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer transition-colors min-h-[52px]">
+                {uploadingIdDoc ? (
+                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Camera className="w-5 h-5" aria-hidden="true" />
+                )}
+                <span>
+                  {uploadingIdDoc
+                    ? 'Enviando documento...'
+                    : identityAttachments.length > 0
+                      ? 'Adicionar outra foto do documento (verso ou complemento)'
+                      : 'Tirar foto ou enviar documento (Frente e Verso)'}
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  disabled={uploadingIdDoc}
+                  accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                  onChange={handleIdentityDocUpload}
+                />
+              </label>
+
+              {idDocError && (
+                <p role="alert" className="text-sm text-red-700 font-medium">
+                  {idDocError}
+                </p>
+              )}
+
+              {identityAttachments.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  {identityAttachments.map((att) => (
+                    <div
+                      key={att.id}
+                      className="flex items-center justify-between gap-3 p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <CheckCircle2
+                          className="w-5 h-5 text-emerald-700 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-zinc-900 truncate">
+                            {att.originalName}
+                          </p>
+                          <p className="text-xs text-zinc-600 tabular-nums">
+                            Documento com foto · {(att.sizeBytes / 1024).toFixed(0)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(att.fileId)}
+                        className="text-xs font-semibold text-red-700 hover:text-red-900 px-2 py-1 cursor-pointer"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Seção Opcional: Currículo ou Certificados */}
+            <div className="pt-4 border-t border-zinc-200 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-zinc-900 mb-1.5">
-                  Tipo de documento para envio
-                </label>
+                <h3 className="text-sm font-bold text-zinc-900">
+                  Currículo ou certificados (opcional)
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Se desejar, anexe também seu currículo ou certificado de curso (NR-11, MOPP, etc.).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                 <select
-                  value={uploadCategory}
+                  value={extraCategory}
                   onChange={(e) =>
-                    setUploadCategory(e.target.value as UploadedAttachment['category'])
+                    setExtraCategory(e.target.value as UploadedAttachment['category'])
                   }
+                  aria-label="Tipo de anexo opcional"
                   className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
                 >
                   <option value="curriculo">Currículo (PDF, DOCX, JPG ou PNG)</option>
-                  <option value="certificado">Certificado profissional (PDF, JPG ou PNG)</option>
-                  <option value="curso">Comprovante de curso/treinamento (PDF, JPG ou PNG)</option>
-                  <option value="qualificacao">
-                    Documento de qualificação da vaga (PDF, JPG ou PNG)
-                  </option>
+                  <option value="certificado">Certificado (PDF, JPG ou PNG)</option>
+                  <option value="curso">Comprovante de curso (PDF, JPG ou PNG)</option>
                 </select>
-              </div>
 
-              <div>
-                <label className="flex items-center justify-center gap-2 w-full px-5 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer transition-colors min-h-[46px]">
+                <label className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer transition-colors min-h-[46px]">
                   <Upload className="w-4 h-4" aria-hidden="true" />
-                  {uploading ? 'Validando e enviando...' : 'Selecionar arquivo'}
+                  {uploadingExtra ? 'Enviando...' : 'Anexar arquivo opcional'}
                   <input
                     type="file"
                     className="sr-only"
-                    disabled={uploading}
+                    disabled={uploadingExtra}
                     accept={
-                      uploadCategory === 'curriculo'
+                      extraCategory === 'curriculo'
                         ? '.pdf,.docx,.jpg,.jpeg,.png'
                         : '.pdf,.jpg,.jpeg,.png'
                     }
-                    onChange={handleFileUpload}
+                    onChange={handleExtraFileUpload}
                   />
                 </label>
               </div>
-            </div>
 
-            {uploadError && (
-              <p role="alert" className="text-sm text-red-700 font-medium">
-                {uploadError}
-              </p>
-            )}
+              {extraError && (
+                <p role="alert" className="text-sm text-red-700 font-medium">
+                  {extraError}
+                </p>
+              )}
 
-            {form.attachments.length > 0 && (
-              <div className="space-y-2.5">
-                <h3 className="text-sm font-bold text-zinc-900">Arquivos anexados</h3>
-                {form.attachments.map((att) => (
-                  <div
-                    key={att.id}
-                    className="flex items-center justify-between gap-3 p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <FileText className="w-5 h-5 text-[#C8102E] shrink-0" aria-hidden="true" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-zinc-900 truncate">
-                          {att.originalName}
-                        </p>
-                        <p className="text-xs text-zinc-500 tabular-nums">
-                          {att.category} · {(att.sizeBytes / 1024).toFixed(0)} KB
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((p) => ({
-                          ...p,
-                          attachments: p.attachments.filter((a) => a.id !== att.id),
-                        }))
-                      }
-                      className="text-xs font-semibold text-red-700 hover:text-red-900 px-2 py-1 cursor-pointer"
+              {extraAttachments.length > 0 && (
+                <div className="space-y-2">
+                  {extraAttachments.map((att) => (
+                    <div
+                      key={att.id}
+                      className="flex items-center justify-between gap-3 p-3 bg-zinc-50 border border-zinc-200 rounded-xl"
                     >
-                      Remover
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-zinc-900 truncate">
+                            {att.originalName}
+                          </p>
+                          <p className="text-xs text-zinc-500 tabular-nums">
+                            {att.category} · {(att.sizeBytes / 1024).toFixed(0)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(att.fileId)}
+                        className="text-xs font-semibold text-red-700 hover:text-red-900 px-2 py-1 cursor-pointer"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* ETAPA 8 — CONFERÊNCIA DOS DADOS */}
-        {step === 7 && (
-          <div className="space-y-6">
+        {/* PASSO 4 — REVISAR E ENVIAR */}
+        {step === 3 && (
+          <div className="space-y-5">
             <div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                Etapa 8 — Conferência dos Dados e Privacidade
+                4. Revise e finalize sua candidatura
               </h2>
               <p className="mt-1 text-sm text-zinc-600">
-                Revise todas as informações antes de finalizar. Você pode voltar e editar qualquer
-                seção.
+                Confira seus dados antes de enviar. Se precisar ajustar algo, clique em Editar.
               </p>
             </div>
 
-            {/* Resumo */}
-            <div className="space-y-4 text-sm">
-              <div className="border border-zinc-200 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-zinc-500">Vaga escolhida e benefícios</p>
-                  <p className="font-bold text-zinc-950">
-                    {selectedJob.title} — {selectedJob.salaryDisplay}
-                  </p>
-                  <p className="text-xs text-zinc-600 mt-1">
-                    {selectedJob.benefits.join(' · ')}
-                  </p>
-                </div>
-              </div>
-
+            <div className="space-y-3 text-sm">
               <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-zinc-900">Dados de contato</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-bold text-zinc-900">Dados e endereço</p>
                   <button
                     type="button"
                     onClick={() => setStep(0)}
@@ -2298,18 +1636,20 @@ export function ApplicationWizard({
                     Editar
                   </button>
                 </div>
-                <p className="text-zinc-700">
-                  {form.personal.fullName} · {form.personal.email} · {form.personal.phone}
+                <p className="text-zinc-800 font-medium">
+                  {form.personal.fullName} · {form.personal.phone}
                 </p>
-                <p className="text-zinc-600 text-xs mt-1">
-                  {form.personal.city}/{form.personal.state}{' '}
-                  {form.personal.cep ? `· CEP ${form.personal.cep}` : ''}
+                <p className="text-xs text-zinc-600 mt-0.5">
+                  {form.personal.email} · {form.personal.street ? `${form.personal.street}, ` : ''}
+                  {form.personal.number ? `${form.personal.number} · ` : ''}
+                  {form.personal.neighborhood ? `${form.personal.neighborhood} · ` : ''}
+                  {form.personal.city}/{form.personal.state} (CEP {form.personal.cep})
                 </p>
               </div>
 
               <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-zinc-900">Escolaridade e qualificações</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-bold text-zinc-900">Experiência e disponibilidade</p>
                   <button
                     type="button"
                     onClick={() => setStep(1)}
@@ -2319,17 +1659,26 @@ export function ApplicationWizard({
                     Editar
                   </button>
                 </div>
-                <p className="text-zinc-700">{form.education.educationLevel}</p>
-                {form.education.skills.length > 0 && (
-                  <p className="text-xs text-zinc-600 mt-1">
-                    Conhecimentos: {form.education.skills.join(', ')}
-                  </p>
+                <p className="text-xs text-zinc-700">
+                  Escolaridade: {form.education.educationLevel} · Início:{' '}
+                  {form.professionalSummary.startAvailability}
+                </p>
+                {form.professionalSummary.hasWorkedBefore === 'Sim' ? (
+                  <ul className="mt-1.5 space-y-1 text-xs text-zinc-700">
+                    {form.experiences.map((exp) => (
+                      <li key={exp.id}>
+                        <strong>{exp.role}</strong> em {exp.companyName} ({exp.durationLabel})
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-zinc-600 mt-1">Buscando primeiro emprego.</p>
                 )}
               </div>
 
               <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-zinc-900">Histórico profissional</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-bold text-zinc-900">Documentos anexados</p>
                   <button
                     type="button"
                     onClick={() => setStep(2)}
@@ -2339,61 +1688,28 @@ export function ApplicationWizard({
                     Editar
                   </button>
                 </div>
-                {form.professionalSummary.hasWorkedBefore === 'Sim' ? (
-                  <ul className="space-y-1.5 text-zinc-700">
-                    {form.experiences.map((exp) => (
-                      <li key={exp.id}>
-                        <strong>{exp.role}</strong> em {exp.companyName} — {exp.durationLabel}
-                        {exp.lastSalary ? ` (último salário: ${exp.lastSalary})` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-zinc-700">Buscando primeiro emprego.</p>
-                )}
-              </div>
-
-              <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-zinc-900">Disponibilidade e anexos</p>
-                  <button
-                    type="button"
-                    onClick={() => setStep(3)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                    Editar
-                  </button>
-                </div>
-                <p className="text-zinc-700">
-                  Início: {form.availability.startTimeline} · Viagens:{' '}
-                  {form.availability.travelAvailability} · Pernoite:{' '}
-                  {form.availability.overnightStayAvailability}
-                </p>
-                <p className="text-xs text-zinc-600 mt-1">
-                  Anexos enviados: {form.attachments.length} arquivo(s)
+                <p className="text-xs text-zinc-700">
+                  Documento com foto (frente e verso): {identityAttachments.length} arquivo(s) ·
+                  Outros anexos: {extraAttachments.length} arquivo(s)
                 </p>
               </div>
             </div>
 
-            {/* Bloco LGPD */}
-            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-5 space-y-3 text-xs text-zinc-700 leading-relaxed">
-              <div className="flex items-center gap-2 font-bold text-zinc-900 text-sm">
-                <ShieldCheck className="w-4 h-4 text-[#C8102E]" aria-hidden="true" />
-                Aviso de Privacidade (LGPD)
-              </div>
+            {/* Resumo das atividades + ciência LGPD e verificação de antecedentes */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 space-y-2 text-xs text-zinc-700 leading-relaxed">
+              <p className="font-bold text-zinc-900">
+                Privacidade e uso das informações ({settings.cnpj})
+              </p>
               <p>
-                <strong>Controlador:</strong> {settings.legalName} ({settings.cnpj}).{' '}
-                <strong>Finalidade:</strong> análise e condução do processo seletivo para a vaga
-                selecionada. <strong>Retenção:</strong> até {settings.retentionDays} dias após o
-                término do processo. <strong>Direitos e contato:</strong> solicite acesso, correção
-                ou exclusão pelo canal {settings.dpoEmail}.{' '}
+                Os dados preenchidos e o documento com foto enviado serão usados exclusivamente para
+                análise do processo seletivo, confirmação de identidade e{' '}
+                <strong>verificação de antecedentes criminais</strong> aplicável à função.{' '}
                 <button
                   type="button"
                   onClick={() => onNavigate('/privacidade')}
                   className="underline font-semibold text-zinc-950 cursor-pointer"
                 >
-                  Ler Política de Privacidade completa
+                  Ler Política de Privacidade
                 </button>
                 .
               </p>
@@ -2417,14 +1733,25 @@ export function ApplicationWizard({
                 <input
                   type="checkbox"
                   checked={form.lgpdConsent}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, lgpdConsent: e.target.checked }))
-                  }
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setForm((p) => ({
+                      ...p,
+                      lgpdConsent: checked,
+                      safetyAndAccessibility: {
+                        ...p.safetyAndAccessibility,
+                        confirmedEssentialTasks: checked,
+                        awareSafetyAndTraining: checked,
+                      },
+                    }));
+                  }}
                   className="w-5 h-5 mt-0.5 accent-[#C8102E]"
                 />
-                <span className="text-sm text-zinc-900">
-                  Declaro ciência das informações da Política de Privacidade e do tratamento dos
-                  meus dados para este processo seletivo. <span className="text-[#C8102E]">*</span>
+                <span className="text-sm text-zinc-900 leading-relaxed">
+                  Confirmo que as informações são verdadeiras, estou ciente das atividades e
+                  normas de segurança da vaga e autorizo o uso dos meus dados e documento com foto
+                  para análise cadastral e verificação de antecedentes no processo seletivo (LGPD).{' '}
+                  <span className="text-[#C8102E]">*</span>
                 </span>
               </label>
 
@@ -2438,15 +1765,14 @@ export function ApplicationWizard({
                   className="w-5 h-5 mt-0.5 accent-[#C8102E]"
                 />
                 <span className="text-sm text-zinc-700">
-                  (Opcional) Autorizo a manutenção do meu cadastro para futuras vagas compatíveis
-                  com meu perfil durante o prazo de retenção informado.
+                  (Opcional) Autorizo manter meu cadastro para futuras vagas compatíveis.
                 </span>
               </label>
             </div>
           </div>
         )}
 
-        {/* Navegação Inferior do Formulário */}
+        {/* Navegação Inferior */}
         <div className="pt-6 border-t border-zinc-200 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {step > 0 ? (
             <button
@@ -2474,7 +1800,7 @@ export function ApplicationWizard({
               onClick={goNext}
               className="inline-flex items-center justify-center gap-2 px-7 py-3.5 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl min-h-[50px] cursor-pointer"
             >
-              Próximo
+              Continuar
               <ArrowRight className="w-5 h-5" aria-hidden="true" />
             </button>
           ) : (
@@ -2485,7 +1811,7 @@ export function ApplicationWizard({
               className="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl min-h-[52px] disabled:opacity-60 cursor-pointer"
             >
               <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
-              {submitting ? 'Registrando candidatura...' : 'FINALIZAR MINHA CANDIDATURA'}
+              {submitting ? 'Enviando candidatura...' : 'ENVIAR CANDIDATURA'}
             </button>
           )}
         </div>

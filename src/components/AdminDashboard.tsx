@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Eye,
   FileSpreadsheet,
+  Globe,
   Inbox,
   LayoutDashboard,
   Lock,
@@ -16,6 +17,7 @@ import {
   MessageCircle,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import { DEFAULT_JOBS } from '../data/defaultJobs.ts';
@@ -28,6 +30,7 @@ import {
   adminLogout,
   AdminUserSession,
   buildAdminExportUrl,
+  deleteAdminApplication,
   downloadAdminAttachment,
   fetchAdminApplicationDetail,
   fetchAdminApplications,
@@ -123,6 +126,13 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [savingUpdate, setSavingUpdate] = useState(false);
   const [updateFeedback, setUpdateFeedback] = useState('');
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    candidateName: string;
+    protocol: string;
+  } | null>(null);
+  const [deletingApplication, setDeletingApplication] = useState(false);
+  const [deleteFeedback, setDeleteFeedback] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -307,6 +317,38 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     window.location.href = url;
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingApplication(true);
+    setListError('');
+    setDetailError('');
+    try {
+      await deleteAdminApplication(deleteTarget.id);
+      const removedProtocol = deleteTarget.protocol;
+      const removedName = deleteTarget.candidateName;
+      if (selectedId === deleteTarget.id) {
+        setSelectedId(null);
+        setDetailData(null);
+      }
+      setDeleteTarget(null);
+      setDeleteFeedback(`Ficha de ${removedName} (${removedProtocol}) excluída com sucesso.`);
+      if (listData && listData.items.length === 1 && page > 1) {
+        setPage((p) => Math.max(1, p - 1));
+      } else {
+        await loadApplications();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao excluir candidatura.';
+      setListError(msg);
+      if (selectedId === deleteTarget.id) {
+        setDetailError(msg);
+      }
+      setDeleteTarget(null);
+    } finally {
+      setDeletingApplication(false);
+    }
+  };
+
   if (checkingSession) {
     return (
       <div className="max-w-md mx-auto px-4 py-24 text-center text-sm text-zinc-600">
@@ -330,7 +372,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               <h1 className="font-display text-xl font-extrabold text-zinc-950">
                 Painel Administrativo
               </h1>
-              <p className="text-xs text-zinc-500">Acesso restrito ao recrutamento · JSL Empresa</p>
+              <p className="text-xs text-zinc-500">Acesso restrito ao recrutamento · JSL - LOGÍSTICA</p>
             </div>
           </div>
 
@@ -488,7 +530,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               Candidaturas recebidas ({session.channelPath})
             </h1>
             <p className="text-sm text-zinc-600">
-              Visualização exclusiva das inscrições enviadas pelo seu link de divulgação.
+              {session.channelPath === '/vagas2'
+                ? 'Inscrições recebidas pelo link /vagas2 e pelo site principal (destacadas em cor).'
+                : 'Visualização exclusiva das inscrições enviadas pelo seu link de divulgação.'}
             </p>
           </div>
           <button
@@ -682,6 +726,23 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
         </div>
 
+        {/* Confirmação de exclusão */}
+        {deleteFeedback && (
+          <div
+            role="status"
+            className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-4 text-sm text-emerald-900"
+          >
+            <span>{deleteFeedback}</span>
+            <button
+              type="button"
+              onClick={() => setDeleteFeedback('')}
+              className="text-xs font-bold text-emerald-800 hover:underline cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
+
         {/* Estado de erro */}
         {listError && (
           <div
@@ -706,11 +767,12 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
                   <th className="py-3.5 px-4">Candidato</th>
+                  <th className="py-3.5 px-4">Origem</th>
                   <th className="py-3.5 px-4">Vaga</th>
                   <th className="py-3.5 px-4">Cidade/UF</th>
                   <th className="py-3.5 px-4">Recebimento (SP)</th>
                   <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Ficha</th>
+                  <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-sm">
@@ -719,6 +781,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     <tr key={i} className="animate-pulse">
                       <td className="py-4 px-4">
                         <div className="h-4 w-40 bg-zinc-200 rounded" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 w-24 bg-zinc-200 rounded" />
                       </td>
                       <td className="py-4 px-4">
                         <div className="h-4 w-32 bg-zinc-200 rounded" />
@@ -739,7 +804,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   ))
                 ) : !listData || listData.items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-14 px-4 text-center">
+                    <td colSpan={7} className="py-14 px-4 text-center">
                       <Inbox className="w-8 h-8 text-zinc-400 mx-auto mb-2" aria-hidden="true" />
                       <p className="font-display font-bold text-zinc-900">
                         Nenhuma candidatura encontrada
@@ -751,34 +816,72 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     </td>
                   </tr>
                 ) : (
-                  listData.items.map((item) => (
-                    <tr key={item.id} className="hover:bg-zinc-50 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <p className="font-semibold text-zinc-950">{item.candidateName}</p>
-                        <p className="font-mono-tabular text-xs text-zinc-500">{item.protocol}</p>
-                      </td>
-                      <td className="py-3.5 px-4 text-zinc-800">{item.jobTitle}</td>
-                      <td className="py-3.5 px-4 text-zinc-600">
-                        {item.candidateCity}/{item.candidateState}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-zinc-600 tabular-nums whitespace-nowrap">
-                        {formatDateTimeSaoPaulo(item.createdAt)}
-                      </td>
-                      <td className={`py-3.5 px-4 text-xs font-bold ${getStatusTextClass(item.status)}`}>
-                        {item.status}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => openDetailDrawer(item.id)}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-[#C8102E] rounded-lg cursor-pointer transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                          Ver ficha
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  listData.items.map((item) => {
+                    const isMainSite = item.entrySource === 'site_principal';
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`transition-colors ${
+                          isMainSite
+                            ? 'bg-amber-50 hover:bg-amber-100/80'
+                            : 'hover:bg-zinc-50'
+                        }`}
+                      >
+                        <td className="py-3.5 px-4">
+                          <p className="font-semibold text-zinc-950">{item.candidateName}</p>
+                          <p className="font-mono-tabular text-xs text-zinc-500">{item.protocol}</p>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs whitespace-nowrap">
+                          {isMainSite ? (
+                            <span className="inline-flex items-center gap-1.5 font-bold text-amber-900">
+                              <Globe className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" />
+                              Site principal
+                            </span>
+                          ) : (
+                            <span className="text-zinc-500">Link {session.channelPath}</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-zinc-800">{item.jobTitle}</td>
+                        <td className="py-3.5 px-4 text-zinc-600">
+                          {item.candidateCity}/{item.candidateState}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-zinc-600 tabular-nums whitespace-nowrap">
+                          {formatDateTimeSaoPaulo(item.createdAt)}
+                        </td>
+                        <td className={`py-3.5 px-4 text-xs font-bold ${getStatusTextClass(item.status)}`}>
+                          {item.status}
+                        </td>
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openDetailDrawer(item.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-[#C8102E] rounded-lg cursor-pointer transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                              Ver ficha
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({
+                                  id: item.id,
+                                  candidateName: item.candidateName,
+                                  protocol: item.protocol,
+                                })
+                              }
+                              aria-label={`Excluir ficha de ${item.candidateName}`}
+                              title="Excluir formulário preenchido"
+                              className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg cursor-pointer transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -831,7 +934,10 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 {detailData ? (
                   <>
                     <p className="font-mono-tabular text-xs font-bold text-red-400">
-                      {detailData.application.protocol} · Canal {detailData.application.channelPath}
+                      {detailData.application.protocol} ·{' '}
+                      {detailData.application.entrySource === 'site_principal'
+                        ? 'Site principal (painel /vagas2)'
+                        : `Canal ${detailData.application.channelPath}`}
                     </p>
                     <h2 className="font-display text-xl font-extrabold truncate">
                       {detailData.application.personal.fullName}
@@ -872,27 +978,52 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
               {detailData && (
                 <>
-                  {/* Contatos rápidos */}
-                  <div className="flex flex-wrap gap-2">
-                    <a
-                      href={`mailto:${detailData.application.personal.email}`}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl"
+                  {detailData.application.entrySource === 'site_principal' && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 flex items-center gap-2.5 text-xs font-semibold text-amber-950">
+                      <Globe className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" />
+                      <span>
+                        Origem: <strong>Site principal</strong> — candidatura preenchida pela
+                        página principal e direcionada ao painel /vagas2.
+                      </span>
+                    </div>
+                  )}
+                  {/* Contatos rápidos + Excluir */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={`mailto:${detailData.application.personal.email}`}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl"
+                      >
+                        <Mail className="w-4 h-4 text-[#C8102E]" aria-hidden="true" />
+                        E-mail
+                      </a>
+                      <a
+                        href={`https://wa.me/55${(
+                          detailData.application.personal.whatsapp ||
+                          detailData.application.personal.phone
+                        ).replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl"
+                      >
+                        <MessageCircle className="w-4 h-4" aria-hidden="true" />
+                        WhatsApp
+                      </a>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDeleteTarget({
+                          id: detailData.application.id,
+                          candidateName: detailData.application.personal.fullName,
+                          protocol: detailData.application.protocol,
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl cursor-pointer transition-colors"
                     >
-                      <Mail className="w-4 h-4 text-[#C8102E]" aria-hidden="true" />
-                      E-mail
-                    </a>
-                    <a
-                      href={`https://wa.me/55${(
-                        detailData.application.personal.whatsapp ||
-                        detailData.application.personal.phone
-                      ).replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl"
-                    >
-                      <MessageCircle className="w-4 h-4" aria-hidden="true" />
-                      WhatsApp
-                    </a>
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
+                      Excluir candidatura
+                    </button>
                   </div>
 
                   {/* Alteração de Status e Notas Internas */}
@@ -1188,21 +1319,34 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       <p className="text-zinc-500">Nenhum anexo enviado pelo candidato.</p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {detailData.attachments.map((att) => (
-                          <button
-                            key={att.fileId}
-                            type="button"
-                            disabled={downloadingFileId === att.fileId}
-                            onClick={() => handleDownloadAttachment(att.fileId, att.originalName)}
-                            className="inline-flex items-center gap-2 px-3.5 py-2 font-semibold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer disabled:opacity-60"
-                          >
-                            <Download className="w-3.5 h-3.5 text-[#C8102E]" aria-hidden="true" />
-                            <span>
-                              {att.originalName} ({att.category} ·{' '}
-                              {Math.max(1, Math.round(att.sizeBytes / 1024))} KB)
-                            </span>
-                          </button>
-                        ))}
+                        {detailData.attachments.map((att) => {
+                          const isIdentityDoc =
+                            detailData.application.identityDocumentIds?.includes(att.fileId);
+                          const catLabel = isIdentityDoc
+                            ? 'Documento com foto (frente e verso)'
+                            : att.category === 'curriculo'
+                              ? 'Currículo'
+                              : att.category === 'certificado'
+                                ? 'Certificado'
+                                : att.category === 'curso'
+                                  ? 'Curso'
+                                  : 'Qualificação';
+                          return (
+                            <button
+                              key={att.fileId}
+                              type="button"
+                              disabled={downloadingFileId === att.fileId}
+                              onClick={() => handleDownloadAttachment(att.fileId, att.originalName)}
+                              className="inline-flex items-center gap-2 px-3.5 py-2 font-semibold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer disabled:opacity-60"
+                            >
+                              <Download className="w-3.5 h-3.5 text-[#C8102E]" aria-hidden="true" />
+                              <span>
+                                {att.originalName} ({catLabel} ·{' '}
+                                {Math.max(1, Math.round(att.sizeBytes / 1024))} KB)
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </section>
@@ -1231,6 +1375,59 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   </section>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmação de exclusão */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+          aria-describedby="delete-dialog-desc"
+        >
+          <div className="bg-white border border-zinc-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-200 text-[#C8102E] flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h2
+                  id="delete-dialog-title"
+                  className="font-display text-lg font-extrabold text-zinc-950"
+                >
+                  Excluir candidatura?
+                </h2>
+                <p id="delete-dialog-desc" className="mt-1 text-sm text-zinc-600 leading-relaxed">
+                  Você está prestes a excluir permanentemente a ficha de{' '}
+                  <strong className="text-zinc-950">{deleteTarget.candidateName}</strong> (protocolo{' '}
+                  <span className="font-mono-tabular">{deleteTarget.protocol}</span>), incluindo
+                  experiências e documentos anexados. Esta ação não pode ser desfeita.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deletingApplication}
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2.5 text-sm font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletingApplication}
+                onClick={handleConfirmDelete}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer disabled:opacity-60"
+              >
+                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                {deletingApplication ? 'Excluindo...' : 'Excluir definitivamente'}
+              </button>
             </div>
           </div>
         </div>

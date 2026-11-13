@@ -48,10 +48,10 @@ export function PrivacyPolicyPage({ settings }: { settings: CompanySettings }) {
             processo seletivo.
           </p>
           <p>
-            Em observância ao princípio da necessidade, não solicitamos CPF, RG, dados bancários,
-            fotografia do rosto ou informações médicas/diagnósticos na etapa inicial de inscrição.
-            Documentos pessoais obrigatórios para admissão são solicitados somente após aprovação
-            para etapa de contratação.
+            Solicitamos dados de contato, histórico profissional e documento oficial com foto
+            (frente e verso) exclusivamente para confirmação de identidade, verificação cadastral e
+            de antecedentes no processo seletivo. Dados bancários e exames médicos admissionais são
+            solicitados somente após aprovação para etapa de contratação.
           </p>
         </section>
 

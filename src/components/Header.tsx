@@ -36,7 +36,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-zinc-200">
+    <header className="sticky top-0 z-40 bg-[#C8102E] text-white border-b border-[#A00D24] shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
         <a
           href={buildChannelPath(channelPrefix, '/')}
@@ -44,9 +44,9 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
             e.preventDefault();
             handleLinkClick('/');
           }}
-          className="flex items-center gap-2.5 text-lg font-extrabold tracking-tight text-zinc-900 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#C8102E]"
+          className="flex items-center gap-2.5 text-lg font-extrabold tracking-tight text-white whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
         >
-          <span className="inline-flex w-7 h-7 rounded bg-[#C8102E] items-center justify-center text-white text-xs font-bold tracking-tighter">
+          <span className="inline-flex w-8 h-8 rounded-lg bg-white items-center justify-center text-[#C8102E] text-xs font-extrabold tracking-tighter">
             JSL
           </span>
           <span className="font-display">JSL - LOGÍSTICA</span>
@@ -54,7 +54,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
 
         <nav
           aria-label="Navegação principal"
-          className="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-600"
+          className="hidden md:flex items-center gap-6 text-sm font-semibold text-white/90"
         >
           {navItems.map((item) => {
             const isActive =
@@ -75,8 +75,8 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
                 }}
                 className={`whitespace-nowrap shrink-0 py-1 transition-colors border-b-2 ${
                   isActive
-                    ? 'text-zinc-950 border-[#C8102E]'
-                    : 'border-transparent hover:text-zinc-950 hover:border-zinc-300'
+                    ? 'text-white border-white'
+                    : 'border-transparent hover:text-white hover:border-white/50'
                 }`}
               >
                 {item.label}
@@ -89,7 +89,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
           <button
             type="button"
             onClick={() => handleLinkClick('/vagas')}
-            className="hidden sm:inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-[#C8102E] rounded-lg hover:bg-[#A00D24] transition-colors whitespace-nowrap shrink-0 min-h-[40px] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E]"
+            className="hidden sm:inline-flex items-center justify-center px-4 py-2 text-sm font-bold text-[#C8102E] bg-white rounded-lg hover:bg-red-50 transition-colors whitespace-nowrap shrink-0 min-h-[40px] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             Ver vagas
           </button>
@@ -98,7 +98,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
             onClick={() => setMobileOpen((v) => !v)}
             aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
             aria-expanded={mobileOpen}
-            className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-lg border border-zinc-200 text-zinc-700 hover:bg-zinc-100"
+            className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-lg border border-white/25 text-white hover:bg-[#A00D24]"
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -106,7 +106,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden border-t border-zinc-200 bg-white px-4 py-4 space-y-1">
+        <div className="md:hidden border-t border-[#A00D24] bg-[#A00D24] px-4 py-4 space-y-1">
           {navItems.map((item) => {
             const href =
               item.route === '/#como-funciona'
@@ -120,7 +120,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
                   e.preventDefault();
                   handleLinkClick(item.route);
                 }}
-                className="block px-3 py-3 rounded-lg text-base font-medium text-zinc-800 hover:bg-zinc-100"
+                className="block px-3 py-3 rounded-lg text-base font-semibold text-white hover:bg-white/10"
               >
                 {item.label}
               </a>
@@ -129,7 +129,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
           <button
             type="button"
             onClick={() => handleLinkClick('/vagas')}
-            className="w-full mt-2 px-4 py-3 text-base font-semibold text-white bg-[#C8102E] rounded-lg hover:bg-[#A00D24]"
+            className="w-full mt-2 px-4 py-3 text-base font-bold text-[#C8102E] bg-white rounded-lg hover:bg-red-50"
           >
             Ver vagas disponíveis
           </button>

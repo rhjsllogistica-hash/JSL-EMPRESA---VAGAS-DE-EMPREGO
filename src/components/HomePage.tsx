@@ -40,15 +40,15 @@ export function HomePage({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
             <div className="lg:col-span-6 flex flex-col justify-center space-y-6">
-              <p className="text-xs sm:text-sm font-semibold tracking-wide text-[#C8102E]">
-                JSL EMPRESA · {brandSubtitle}
+              <p className="text-xs sm:text-sm font-bold tracking-wide text-[#C8102E]">
+                JSL - LOGÍSTICA · {brandSubtitle}
               </p>
 
               <h1
-                className="font-display font-extrabold text-zinc-950 tracking-tight leading-[1.08]"
+                className="font-display font-extrabold text-zinc-950 tracking-tight leading-[1.06]"
                 style={{ fontSize: 'clamp(2.25rem, 4vw, 3.5rem)', textWrap: 'balance' }}
               >
-                FAÇA PARTE DA NOSSA EQUIPE!
+                Faça parte da <span className="text-[#C8102E]">nossa equipe!</span>
               </h1>
 
               <p className="text-base sm:text-lg text-zinc-600 leading-relaxed max-w-xl">
@@ -66,7 +66,7 @@ export function HomePage({
                       .getElementById('vagas-disponiveis')
                       ?.scrollIntoView({ behavior: 'smooth' });
                   }}
-                  className="inline-flex items-center justify-center gap-2.5 px-7 py-4 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[52px] whitespace-nowrap shrink-0 cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2.5 px-7 py-4 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl shadow-sm transition-colors min-h-[52px] whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   VER VAGAS DISPONÍVEIS
                   <ArrowRight className="w-5 h-5" aria-hidden="true" />
@@ -74,64 +74,56 @@ export function HomePage({
                 <button
                   type="button"
                   onClick={() => onNavigate('/privacidade')}
-                  className="inline-flex items-center justify-center px-5 py-3.5 text-sm font-semibold text-zinc-700 hover:text-zinc-950 border border-zinc-300 hover:border-zinc-400 rounded-xl transition-colors min-h-[48px] whitespace-nowrap shrink-0 cursor-pointer"
+                  className="inline-flex items-center justify-center px-5 py-3.5 text-sm font-semibold text-zinc-700 hover:text-[#C8102E] border border-zinc-300 hover:border-[#C8102E]/40 rounded-xl transition-colors min-h-[48px] whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   Privacidade e LGPD
                 </button>
               </div>
 
-              <div className="pt-4 border-t border-zinc-100 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-zinc-500">
+              <div className="pt-4 border-t border-zinc-100 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-zinc-500">
                 <span>Processo seletivo gratuito</span>
                 <span aria-hidden="true">·</span>
                 <span>Contratação CLT</span>
                 <span aria-hidden="true">·</span>
-                <span>Inscrição sem criação de senha</span>
+                <span>Inscrição rápida pelo celular</span>
               </div>
             </div>
 
-            <div className="lg:col-span-6">
-              <div className="relative h-72 sm:h-96 lg:h-full min-h-[340px] rounded-2xl overflow-hidden border border-zinc-200 bg-zinc-900">
+            <div className="lg:col-span-6 flex items-center">
+              <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden border border-zinc-200 shadow-lg bg-zinc-900">
                 <ImageWithFallback
                   src={HERO_IMAGE_PATH}
-                  alt="Frota de caminhões vermelhos estacionados em centro de distribuição logístico moderno"
+                  alt="Colaboradores da JSL Empresa em frente a caminhão vermelho no centro logístico com a mensagem Venha trabalhar conosco"
                   className="w-full h-full object-cover"
                   fallbackTitle="Operações de Transporte e Distribuição"
                 />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-6">
-                  <p className="text-sm font-semibold text-white">
-                    Operações de Transporte Rodoviário e Centros de Distribuição
-                  </p>
-                  <p className="text-xs text-zinc-200 mt-1">
-                    Vagas operacionais com transparência nas condições de trabalho e escala.
-                  </p>
-                </div>
               </div>
             </div>
           </div>
 
-          {/* Faixa institucional objetiva abaixo do hero */}
-          <div className="mt-10 pt-8 border-t border-zinc-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Faixa institucional vermelho e branco abaixo do hero */}
+          <div className="mt-10 bg-[#C8102E] text-white rounded-2xl p-6 sm:p-7 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 shadow-sm">
             <div>
-              <p className="text-xs font-medium text-zinc-500">Áreas com vagas abertas</p>
-              <p className="mt-1 font-display text-lg font-bold text-zinc-900 tabular-nums">
+              <p className="text-xs font-medium text-red-100">Áreas com vagas abertas</p>
+              <p className="mt-1 font-display text-lg font-extrabold text-white tabular-nums">
                 {jobs.length} funções operacionais
               </p>
             </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500">Benefícios padrão divulgados</p>
-              <p className="mt-1 font-display text-lg font-bold text-zinc-900 tabular-nums">
+            <div className="sm:border-l sm:border-white/20 sm:pl-6">
+              <p className="text-xs font-medium text-red-100">Benefícios padrão divulgados</p>
+              <p className="mt-1 font-display text-lg font-extrabold text-white tabular-nums">
                 VT + VR R$ 30,00/dia
               </p>
             </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500">Regime de contratação</p>
-              <p className="mt-1 font-display text-lg font-bold text-zinc-900">
+            <div className="lg:border-l lg:border-white/20 lg:pl-6">
+              <p className="text-xs font-medium text-red-100">Regime de contratação</p>
+              <p className="mt-1 font-display text-lg font-extrabold text-white">
                 CLT com carteira assinada
               </p>
             </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500">Acompanhamento de candidatura</p>
-              <p className="mt-1 font-display text-lg font-bold text-zinc-900">
+            <div className="sm:border-l sm:border-white/20 sm:pl-6">
+              <p className="text-xs font-medium text-red-100">Acompanhamento de candidatura</p>
+              <p className="mt-1 font-display text-lg font-extrabold text-white">
                 Protocolo único imediato
               </p>
             </div>
@@ -206,7 +198,7 @@ export function HomePage({
           {filteredJobs.map((job) => (
             <article
               key={job.id}
-              className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-7 flex flex-col justify-between transition-colors hover:border-zinc-300"
+              className="bg-white border border-zinc-200 border-t-2 border-t-[#C8102E] rounded-2xl p-6 sm:p-7 flex flex-col justify-between shadow-sm hover:shadow-md transition-all"
             >
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-zinc-100">
@@ -385,7 +377,7 @@ export function HomePage({
 
           <div className="mt-12 bg-zinc-50 border border-zinc-200 rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-start gap-4">
-              <div className="w-11 h-11 rounded-xl bg-zinc-900 text-white flex items-center justify-center shrink-0">
+              <div className="w-11 h-11 rounded-xl bg-[#C8102E] text-white flex items-center justify-center shrink-0">
                 <ShieldCheck className="w-6 h-6" aria-hidden="true" />
               </div>
               <div>
@@ -394,14 +386,15 @@ export function HomePage({
                 </h3>
                 <p className="mt-1 text-sm text-zinc-600 max-w-2xl leading-relaxed">
                   Nunca cobramos taxas de inscrição, exames prévios pagos por Pix ou depósitos
-                  bancários. Não exigimos CPF, RG ou foto do rosto na candidatura inicial.
+                  bancários. Os dados e o documento com foto são utilizados exclusivamente para
+                  confirmação de identidade e verificação de antecedentes.
                 </p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => onNavigate('/contato')}
-              className="px-5 py-3 text-sm font-semibold text-zinc-900 bg-white border border-zinc-300 hover:border-zinc-400 rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-5 py-3 text-sm font-semibold text-zinc-900 bg-white border border-zinc-300 hover:border-[#C8102E] hover:text-[#C8102E] rounded-xl whitespace-nowrap shrink-0 cursor-pointer transition-colors"
             >
               Falar com o RH
             </button>
