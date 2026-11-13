@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jsl-logistica-vagasdeemprego",
+  "compatibility_date": "2025-11-01",
+  "pages_build_output_dir": "dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jsl-recrutamento",
+      "database_id": "ec45e2c5-4918-44d4-aee3-270efaf1b805"
+    }
+  ]
+}

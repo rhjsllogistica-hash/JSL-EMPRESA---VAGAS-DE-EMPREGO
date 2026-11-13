@@ -1,1970 +1,1238 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
-  Briefcase,
-  CheckCircle2,
-  ClipboardCheck,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
   Download,
-  Edit3,
+  ExternalLink,
   Eye,
   FileSpreadsheet,
-  FileText,
-  History,
+  Inbox,
   LayoutDashboard,
+  Lock,
   LogOut,
   Mail,
-  Plus,
+  MessageCircle,
+  RefreshCw,
   Search,
-  Settings,
-  ShieldAlert,
-  Trash2,
-  Users,
   X,
 } from 'lucide-react';
-import { DEFAULT_JOBS, STANDARD_BENEFITS } from '../data/defaultJobs.ts';
-import { auth, googleAuthProvider } from '../lib/firebase.ts';
+import { DEFAULT_JOBS } from '../data/defaultJobs.ts';
+import { formatDateTimeSaoPaulo, getSaoPauloTodayYmd } from '../lib/channelRouting.ts';
 import {
-  checkIsAdminRecord,
-  deleteApplicationLgpdAdmin,
-  deleteJobAdmin,
-  fetchAdminUsers,
-  fetchAllJobsAdmin,
-  fetchApplicationDetailsAdmin,
-  fetchApplicationsAdmin,
-  fetchAuditLogsAdmin,
-  fetchContactMessagesAdmin,
-  formatTimestampBR,
-  recordAuditLog,
-  saveCompanySettings,
-  saveJobAdmin,
-  seedDefaultJobsIfEmpty,
-  updateApplicationStatusAdmin,
-  upsertAdminUser,
+  AdminApplicationDetailResponse,
+  AdminApplicationListResponse,
+  AdminFilterParams,
+  adminLogin,
+  adminLogout,
+  AdminUserSession,
+  buildAdminExportUrl,
+  downloadAdminAttachment,
+  fetchAdminApplicationDetail,
+  fetchAdminApplications,
+  fetchAdminSession,
+  updateAdminApplication,
 } from '../lib/recruitmentService.ts';
-import {
-  APPLICATION_STATUSES,
-  ApplicationRecord,
-  ApplicationStatus,
-  AuditLogEntry,
-  CompanySettings,
-  ContactMessageInput,
-  JobPosting,
-  JobRoleType,
-  JobStatus,
-  StatusHistoryEntry,
-  UploadedAttachment,
-  WorkExperienceInput,
-} from '../types/recruitment.ts';
+import { APPLICATION_STATUSES, ApplicationStatus } from '../types/recruitment.ts';
 
 interface AdminDashboardProps {
-  companySettings: CompanySettings;
-  onSettingsUpdated: (next: CompanySettings) => void;
-  onJobsUpdated: () => void;
-  onNavigate: (path: string) => void;
+  onNavigate: (route: string) => void;
 }
 
-type AdminTab =
-  | 'dashboard'
-  | 'candidates'
-  | 'jobs'
-  | 'messages'
-  | 'settings'
-  | 'audit';
+const ROLE_SPECIFIC_LABELS: Record<string, string> = {
+  cnhCategory: 'Categoria da CNH',
+  hasValidCnh: 'CNH válida',
+  truckExperience: 'Experiência dirigindo caminhões',
+  truckExperienceDuration: 'Tempo de experiência com caminhões',
+  truckTypesDriven: 'Tipos de caminhões já dirigidos',
+  intercityInterstateTravel: 'Experiência em viagens intermunicipais/interestaduais',
+  truckTravelAvailability: 'Disponibilidade para viagens',
+  truckOvernightAvailability: 'Disponibilidade para pernoite',
+  truckFlexibleHours: 'Disponibilidade para horários variáveis',
+  transportCourses: 'Cursos de transporte relevantes',
+  hasValidCnhBPlus: 'CNH B ou superior válida',
+  utilityVehicleExperience: 'Experiência com veículos utilitários',
+  deliveryExperience: 'Experiência com entregas',
+  routeExperience: 'Experiência com rotas',
+  fiorinoTravelAvailability: 'Disponibilidade para viagens',
+  fiorinoOvernightAvailability: 'Disponibilidade para pernoites',
+  fiorinoHoursAvailability: 'Disponibilidade de horários',
+  forkliftTraining: 'Treinamento para operar empilhadeira',
+  forkliftCertificate: 'Possui certificado',
+  forkliftEquipmentTypes: 'Equipamentos operados',
+  forkliftWorkExperience: 'Experiência profissional como operador',
+  forkliftExperienceDuration: 'Tempo de experiência',
+  forkliftUpdatedLegalTraining: 'Treinamento atualizado (NR-11)',
+  orderPickingExp: 'Experiência com separação de pedidos',
+  stockOrganizationExp: 'Experiência com organização de estoque',
+  warehouseExp: 'Experiência em galpões/CDs',
+  auxSchedule6x1: 'Disponibilidade escala 6x1',
+  manualHandlingSafeLimits: 'Movimentação manual dentro dos limites legais',
+  productInspectionExp: 'Experiência com conferência de produtos',
+  parcelIdentificationExp: 'Experiência com identificação de encomendas',
+  barcodeScannerExp: 'Uso de leitor de código de barras',
+  inventoryControlExp: 'Controle de estoque',
+  conferenteSchedule6x1: 'Disponibilidade escala 6x1',
+  operationalTasksFit: 'Disponibilidade para tarefas operacionais',
+};
 
-export function AdminDashboard({
-  companySettings,
-  onSettingsUpdated,
-  onJobsUpdated,
-  onNavigate,
-}: AdminDashboardProps) {
-  const [authUser, setAuthUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [authError, setAuthError] = useState('');
+function getStatusTextClass(status: string): string {
+  if (status === 'Recebida') return 'text-[#C8102E]';
+  if (status === 'Processo finalizado') return 'text-emerald-700';
+  if (status === 'Entrevista agendada' || status === 'Entrevista concluída') return 'text-amber-700';
+  return 'text-zinc-800';
+}
 
-  const [tab, setTab] = useState<AdminTab>('dashboard');
-  const [loadingData, setLoadingData] = useState(false);
-  const [bannerMsg, setBannerMsg] = useState('');
+export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
+  const [session, setSession] = useState<AdminUserSession | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
 
-  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
-  const [jobs, setJobs] = useState<JobPosting[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [messages, setMessages] = useState<Array<ContactMessageInput & { id: string; createdAt?: unknown }>>([]);
-  const [adminUsers, setAdminUsers] = useState<
-    Array<{ uid: string; email: string; name: string; role: string; active: boolean }>
-  >([]);
+  // Login form state
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  // Filtros de candidatos
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterJobId, setFilterJobId] = useState('all');
-  const [filterCity, setFilterCity] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterAvailability, setFilterAvailability] = useState('all');
-  const [filterSkill, setFilterSkill] = useState('all');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
+  // Copy channel link feedback
+  const [copiedChannel, setCopiedChannel] = useState(false);
 
-  // Modal de detalhes da candidatura
-  const [selectedApp, setSelectedApp] = useState<ApplicationRecord | null>(null);
-  const [selectedDetails, setSelectedDetails] = useState<{
-    experiences: WorkExperienceInput[];
-    attachments: UploadedAttachment[];
-    history: StatusHistoryEntry[];
-  } | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
+  // List & Filters
+  const [searchInput, setSearchInput] = useState('');
+  const [searchApplied, setSearchApplied] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [jobFilter, setJobFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  const [listData, setListData] = useState<AdminApplicationListResponse | null>(null);
+  const [loadingList, setLoadingList] = useState(false);
+  const [listError, setListError] = useState('');
+
+  // Drawer details
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailData, setDetailData] = useState<AdminApplicationDetailResponse | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState('');
+
   const [nextStatus, setNextStatus] = useState<ApplicationStatus>('Recebida');
   const [statusComment, setStatusComment] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
-  const [confirmDeleteApp, setConfirmDeleteApp] = useState(false);
-
-  // Modal de edição/criação de vaga
-  const [editingJob, setEditingJob] = useState<JobPosting | null>(null);
-
-  // Form de configurações institucionais
-  const [settingsForm, setSettingsForm] = useState<CompanySettings>(companySettings);
-
-  // Form de novo administrador
-  const [newAdminUid, setNewAdminUid] = useState('');
-  const [newAdminEmail, setNewAdminEmail] = useState('');
-  const [newAdminName, setNewAdminName] = useState('');
-  const [newAdminRole, setNewAdminRole] = useState<'recruiter' | 'super_admin'>('recruiter');
+  const [savingUpdate, setSavingUpdate] = useState(false);
+  const [updateFeedback, setUpdateFeedback] = useState('');
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
 
   useEffect(() => {
-    setSettingsForm(companySettings);
-  }, [companySettings]);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setAuthUser(user);
-      setAuthError('');
-      if (!user) {
-        setIsAuthorized(false);
-        setAuthReady(true);
-        return;
-      }
-      const email = (user.email || '').toLowerCase();
-      const verified = Boolean(user.emailVerified);
-      if (!verified) {
-        setIsAuthorized(false);
-        setAuthReady(true);
-        return;
-      }
-      if (email === 'rh.jsl.logistica@gmail.com') {
-        setIsAuthorized(true);
-        setAuthReady(true);
-        return;
-      }
-      const inDb = await checkIsAdminRecord(user.uid);
-      setIsAuthorized(inDb);
-      setAuthReady(true);
-    });
-    return () => unsub();
+    let active = true;
+    fetchAdminSession()
+      .then((user) => {
+        if (active) setSession(user);
+      })
+      .catch(() => {
+        if (active) setSession(null);
+      })
+      .finally(() => {
+        if (active) setCheckingSession(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const loadAllAdminData = useCallback(async () => {
-    if (!isAuthorized || !authUser) return;
-    setLoadingData(true);
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1);
+      setSearchApplied(searchInput);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const currentFilterParams: AdminFilterParams = {
+    search: searchApplied,
+    status: statusFilter,
+    jobId: jobFilter,
+    dateFrom,
+    dateTo,
+    page,
+    pageSize,
+  };
+
+  const loadApplications = useCallback(async () => {
+    if (!session) return;
+    setLoadingList(true);
+    setListError('');
     try {
-      const [appsData, jobsData, logsData, msgsData, adminsData] = await Promise.all([
-        fetchApplicationsAdmin(),
-        fetchAllJobsAdmin(),
-        fetchAuditLogsAdmin(),
-        fetchContactMessagesAdmin(),
-        fetchAdminUsers(),
-      ]);
-      setApplications(appsData);
-      setJobs(jobsData);
-      setAuditLogs(logsData);
-      setMessages(msgsData);
-      setAdminUsers(adminsData);
+      const data = await fetchAdminApplications({
+        search: searchApplied,
+        status: statusFilter,
+        jobId: jobFilter,
+        dateFrom,
+        dateTo,
+        page,
+        pageSize,
+      });
+      setListData(data);
     } catch (err) {
-      console.error('Erro ao carregar painel administrativo:', err);
-      setBannerMsg('Falha ao carregar alguns registros do banco de dados.');
+      const msg = err instanceof Error ? err.message : 'Erro ao carregar candidaturas.';
+      setListError(msg);
+      if (msg.toLowerCase().includes('não autenticada') || msg.toLowerCase().includes('expirada')) {
+        setSession(null);
+      }
     } finally {
-      setLoadingData(false);
+      setLoadingList(false);
     }
-  }, [isAuthorized, authUser]);
+  }, [session, searchApplied, statusFilter, jobFilter, dateFrom, dateTo, page, pageSize]);
 
   useEffect(() => {
-    if (isAuthorized) {
-      loadAllAdminData();
+    if (session) {
+      loadApplications();
     }
-  }, [isAuthorized, loadAllAdminData]);
+  }, [session, loadApplications]);
 
-  const handleLogin = async () => {
-    setAuthError('');
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoggingIn(true);
     try {
-      await signInWithPopup(auth, googleAuthProvider);
+      const user = await adminLogin(username.trim(), password);
+      setSession(user);
+      setPassword('');
     } catch (err) {
-      setAuthError(
-        err instanceof Error ? err.message : 'Não foi possível concluir o login com Google.'
-      );
-    }
-  };
-
-  const handleSeedJobs = async () => {
-    if (!authUser?.email) return;
-    const seeded = await seedDefaultJobsIfEmpty(authUser.email, authUser.uid);
-    if (seeded) {
-      setBannerMsg('As 5 vagas iniciais foram gravadas no banco de dados para gestão.');
-      await loadAllAdminData();
-      onJobsUpdated();
-    }
-  };
-
-  const openCandidateModal = async (app: ApplicationRecord) => {
-    setSelectedApp(app);
-    setNextStatus(app.status);
-    setStatusComment('');
-    setInternalNotes(app.internalNotes || '');
-    setConfirmDeleteApp(false);
-    setLoadingDetails(true);
-    try {
-      const details = await fetchApplicationDetailsAdmin(app.id);
-      setSelectedDetails(details);
+      setLoginError(err instanceof Error ? err.message : 'Usuário ou senha inválidos.');
     } finally {
-      setLoadingDetails(false);
+      setLoggingIn(false);
     }
   };
 
-  const handleUpdateCandidateStatus = async () => {
-    if (!selectedApp || !authUser?.email) return;
-    await updateApplicationStatusAdmin({
-      applicationId: selectedApp.id,
-      protocol: selectedApp.protocol,
-      fromStatus: selectedApp.status,
-      toStatus: nextStatus,
-      comment: statusComment,
-      internalNotes,
-      actorEmail: authUser.email,
-      actorUid: authUser.uid,
-    });
-    setBannerMsg(`Status do protocolo ${selectedApp.protocol} atualizado para "${nextStatus}".`);
-    setSelectedApp({ ...selectedApp, status: nextStatus, internalNotes });
+  const handleLogout = async () => {
+    await adminLogout();
+    setSession(null);
+    setListData(null);
+    setSelectedId(null);
+    setDetailData(null);
+  };
+
+  const handleCopyChannelLink = async () => {
+    if (!session) return;
+    const fullUrl = `${window.location.origin}${session.channelPath}`;
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      setCopiedChannel(true);
+      setTimeout(() => setCopiedChannel(false), 2500);
+    } catch {
+      setCopiedChannel(false);
+    }
+  };
+
+  const applyDateShortcut = (daysAgo: number) => {
+    const today = getSaoPauloTodayYmd(0);
+    const start = daysAgo === 0 ? today : getSaoPauloTodayYmd(-(daysAgo - 1));
+    setDateFrom(start);
+    setDateTo(today);
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearchApplied('');
+    setStatusFilter('all');
+    setJobFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
+
+  const openDetailDrawer = async (id: string) => {
+    setSelectedId(id);
+    setDetailData(null);
+    setDetailError('');
+    setUpdateFeedback('');
     setStatusComment('');
-    const details = await fetchApplicationDetailsAdmin(selectedApp.id);
-    setSelectedDetails(details);
-    await loadAllAdminData();
-  };
-
-  const handleDownloadAttachment = async (att: UploadedAttachment) => {
-    if (!authUser || !selectedApp) return;
-    const idToken = await authUser.getIdToken();
-    const res = await fetch(`/api/admin/attachments/${encodeURIComponent(att.fileId)}`, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
-    if (!res.ok) {
-      setBannerMsg('Falha ao baixar o arquivo privado.');
-      return;
+    setLoadingDetail(true);
+    try {
+      const detail = await fetchAdminApplicationDetail(id);
+      setDetailData(detail);
+      setNextStatus(detail.application.status);
+      setInternalNotes(detail.application.internalNotes || '');
+    } catch (err) {
+      setDetailError(
+        err instanceof Error ? err.message : 'Não foi possível carregar os detalhes da candidatura.'
+      );
+    } finally {
+      setLoadingDetail(false);
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = att.originalName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    await recordAuditLog({
-      action: 'DOWNLOAD_ATTACHMENT',
-      targetType: 'attachment',
-      targetId: att.fileId,
-      details: `Download do anexo "${att.originalName}" do protocolo ${selectedApp.protocol}.`,
-      actorEmail: authUser.email || '',
-      actorUid: authUser.uid,
-    });
   };
 
-  const handleDeleteCandidateLgpd = async () => {
-    if (!selectedApp || !authUser?.email) return;
-    const idToken = await authUser.getIdToken();
-    await deleteApplicationLgpdAdmin({
-      applicationId: selectedApp.id,
-      protocol: selectedApp.protocol,
-      attachments: selectedDetails?.attachments || [],
-      idToken,
-      actorEmail: authUser.email,
-      actorUid: authUser.uid,
-    });
-    setSelectedApp(null);
-    setSelectedDetails(null);
-    setConfirmDeleteApp(false);
-    setBannerMsg(`Candidatura ${selectedApp.protocol} excluída definitivamente (LGPD).`);
-    await loadAllAdminData();
-  };
-
-  const filteredApplications = useMemo(() => {
-    return applications.filter((app) => {
-      if (filterJobId !== 'all' && app.jobId !== filterJobId) return false;
-      if (filterStatus !== 'all' && app.status !== filterStatus) return false;
-      if (
-        filterCity.trim() &&
-        !app.personal.city.toLowerCase().includes(filterCity.toLowerCase())
-      ) {
-        return false;
-      }
-      if (
-        searchQuery.trim() &&
-        !app.personal.fullName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !app.protocol.toLowerCase().includes(searchQuery.toLowerCase())
-      ) {
-        return false;
-      }
-      if (filterAvailability === 'viagens' && app.availability.travelAvailability !== 'Sim') {
-        return false;
-      }
-      if (
-        filterAvailability === 'pernoite' &&
-        app.availability.overnightStayAvailability !== 'Sim'
-      ) {
-        return false;
-      }
-      if (filterAvailability === 'imediato' && !app.availability.startTimeline.toLowerCase().includes('imed')) {
-        return false;
-      }
-      if (filterSkill !== 'all' && !(app.education.skills || []).includes(filterSkill)) {
-        return false;
-      }
-      if (filterDateFrom && app.createdAt) {
-        const d =
-          typeof app.createdAt === 'object' &&
-          app.createdAt !== null &&
-          'toDate' in app.createdAt
-            ? (app.createdAt as { toDate: () => Date }).toDate()
-            : new Date(String(app.createdAt));
-        if (!Number.isNaN(d.getTime()) && d < new Date(`${filterDateFrom}T00:00:00`)) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [
-    applications,
-    filterJobId,
-    filterStatus,
-    filterCity,
-    searchQuery,
-    filterAvailability,
-    filterSkill,
-    filterDateFrom,
-  ]);
-
-  const handleExportCsv = async () => {
-    if (!authUser?.email) return;
-    const headers = [
-      'Protocolo',
-      'Nome',
-      'Email',
-      'Telefone',
-      'Cidade',
-      'UF',
-      'Vaga',
-      'Status',
-      'Escolaridade',
-      'Viagens',
-      'Pernoite',
-      'Inicio',
-      'Data Inscricao',
-    ];
-    const escapeCell = (val: string) => `"${String(val || '').replace(/"/g, '""')}"`;
-    const rows = filteredApplications.map((a) => [
-      a.protocol,
-      a.personal.fullName,
-      a.personal.email,
-      a.personal.phone,
-      a.personal.city,
-      a.personal.state,
-      a.jobTitle,
-      a.status,
-      a.education.educationLevel,
-      a.availability.travelAvailability,
-      a.availability.overnightStayAvailability,
-      a.availability.startTimeline,
-      formatTimestampBR(a.createdAt),
-    ]);
-    const csvContent =
-      '\uFEFF' + [headers.map(escapeCell).join(';'), ...rows.map((r) => r.map(escapeCell).join(';'))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `candidaturas-jsl-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-
-    await recordAuditLog({
-      action: 'EXPORT_CSV',
-      targetType: 'applications',
-      targetId: 'filtered',
-      details: `Exportação CSV de ${filteredApplications.length} candidatura(s).`,
-      actorEmail: authUser.email,
-      actorUid: authUser.uid,
-    });
-    await loadAllAdminData();
-  };
-
-  const handleExportPdf = async () => {
-    if (!authUser?.email) return;
-    const docPdf = new jsPDF({ orientation: 'landscape' });
-    docPdf.setFontSize(14);
-    docPdf.text(`${companySettings.brandName} — Relatório de Candidaturas`, 14, 16);
-    docPdf.setFontSize(9);
-    docPdf.text(
-      `Gerado em ${new Date().toLocaleString('pt-BR')} por ${authUser.email} · Total: ${filteredApplications.length} registros`,
-      14,
-      22
-    );
-
-    autoTable(docPdf, {
-      startY: 28,
-      head: [['Protocolo', 'Candidato', 'Vaga', 'Cidade/UF', 'Telefone', 'Status', 'Data']],
-      body: filteredApplications.map((a) => [
-        a.protocol,
-        a.personal.fullName,
-        a.jobTitle,
-        `${a.personal.city}/${a.personal.state}`,
-        a.personal.phone,
-        a.status,
-        formatTimestampBR(a.createdAt),
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [200, 16, 46] },
-    });
-
-    docPdf.save(`relatorio-candidaturas-${new Date().toISOString().slice(0, 10)}.pdf`);
-    await recordAuditLog({
-      action: 'EXPORT_PDF',
-      targetType: 'applications',
-      targetId: 'filtered',
-      details: `Exportação PDF de ${filteredApplications.length} candidatura(s).`,
-      actorEmail: authUser.email,
-      actorUid: authUser.uid,
-    });
-    await loadAllAdminData();
-  };
-
-  const handleSaveJobForm = async (e: FormEvent) => {
+  const handleSaveStatusAndNotes = async (e: FormEvent) => {
     e.preventDefault();
-    if (!editingJob || !authUser?.email) return;
-    await saveJobAdmin(editingJob, authUser.email, authUser.uid);
-    setEditingJob(null);
-    setBannerMsg(`Vaga "${editingJob.title}" salva com sucesso.`);
-    await loadAllAdminData();
-    onJobsUpdated();
-  };
-
-  const handleQuickJobStatus = async (job: JobPosting, status: JobStatus) => {
-    if (!authUser?.email) return;
-    await saveJobAdmin({ ...job, status }, authUser.email, authUser.uid);
-    setBannerMsg(`Status da vaga "${job.title}" alterado para "${status}".`);
-    await loadAllAdminData();
-    onJobsUpdated();
-  };
-
-  const handleSaveSettings = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!authUser?.email) return;
-    await saveCompanySettings(settingsForm, authUser.email, authUser.uid);
-    onSettingsUpdated(settingsForm);
-    setBannerMsg('Dados institucionais e política de retenção atualizados.');
-    await loadAllAdminData();
-  };
-
-  const handleAddAdmin = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!authUser?.email) return;
-    const idToken = await authUser.getIdToken();
-    await upsertAdminUser({
-      uid: newAdminUid.trim(),
-      email: newAdminEmail.trim().toLowerCase(),
-      name: newAdminName.trim(),
-      role: newAdminRole,
-      active: true,
-      actorEmail: authUser.email,
-      actorUid: authUser.uid,
-      idToken,
-    });
-    setNewAdminUid('');
-    setNewAdminEmail('');
-    setNewAdminName('');
-    setBannerMsg('Administrador autorizado atualizado.');
-    await loadAllAdminData();
-  };
-
-  // Métricas do Dashboard
-  const metrics = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    let todayCount = 0;
-    let inAnalysis = 0;
-    let interviewing = 0;
-    let finished = 0;
-
-    const byJob: Record<string, number> = {};
-    const byStatus: Record<string, number> = {};
-
-    for (const app of applications) {
-      byJob[app.jobTitle] = (byJob[app.jobTitle] || 0) + 1;
-      byStatus[app.status] = (byStatus[app.status] || 0) + 1;
-
-      if (app.status === 'Em análise' || app.status === 'Contato realizado') inAnalysis++;
-      if (app.status === 'Entrevista agendada' || app.status === 'Entrevista concluída') {
-        interviewing++;
-      }
-      if (app.status === 'Processo finalizado') finished++;
-
-      if (
-        app.createdAt &&
-        typeof app.createdAt === 'object' &&
-        'toDate' in app.createdAt &&
-        (app.createdAt as { toDate: () => Date }).toDate().toISOString().slice(0, 10) === todayStr
-      ) {
-        todayCount++;
-      }
+    if (!selectedId || !detailData) return;
+    setSavingUpdate(true);
+    setUpdateFeedback('');
+    setDetailError('');
+    try {
+      await updateAdminApplication(selectedId, {
+        status: nextStatus,
+        comment: statusComment,
+        internalNotes,
+      });
+      setStatusComment('');
+      setUpdateFeedback('Alterações salvas e registradas no histórico.');
+      const refreshed = await fetchAdminApplicationDetail(selectedId);
+      setDetailData(refreshed);
+      await loadApplications();
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : 'Erro ao salvar alteração.');
+    } finally {
+      setSavingUpdate(false);
     }
+  };
 
-    return {
-      total: applications.length,
-      todayCount,
-      inAnalysis,
-      interviewing,
-      finished,
-      byJob: Object.entries(byJob).sort((a, b) => b[1] - a[1]),
-      byStatus,
-    };
-  }, [applications]);
+  const handleDownloadAttachment = async (fileId: string, originalName: string) => {
+    setDownloadingFileId(fileId);
+    setDetailError('');
+    try {
+      await downloadAdminAttachment(fileId, originalName);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : 'Erro ao baixar anexo.');
+    } finally {
+      setDownloadingFileId(null);
+    }
+  };
 
-  if (!authReady) {
+  const handleExportCsv = (scope: 'page' | 'filtered') => {
+    const url = buildAdminExportUrl(currentFilterParams, scope);
+    window.location.href = url;
+  };
+
+  if (checkingSession) {
     return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center text-sm text-zinc-600">
-        Verificando autenticação administrativa...
+      <div className="max-w-md mx-auto px-4 py-24 text-center text-sm text-zinc-600">
+        Verificando sessão administrativa...
       </div>
     );
   }
 
-  if (!authUser) {
+  if (!session) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-16">
-        <div className="bg-white border border-zinc-200 rounded-2xl p-8 text-center space-y-5">
-          <div className="w-12 h-12 rounded-xl bg-[#C8102E] text-white flex items-center justify-center mx-auto font-display font-bold">
-            RH
+      <div className="max-w-md mx-auto px-4 py-14 sm:py-20">
+        <form
+          onSubmit={handleLogin}
+          className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-8 space-y-5"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-zinc-900 text-white flex items-center justify-center shrink-0">
+              <Lock className="w-5 h-5 text-[#C8102E]" aria-hidden="true" />
+            </div>
+            <div>
+              <h1 className="font-display text-xl font-extrabold text-zinc-950">
+                Painel Administrativo
+              </h1>
+              <p className="text-xs text-zinc-500">Acesso restrito ao recrutamento · JSL Empresa</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-display text-2xl font-extrabold text-zinc-950">
-              Painel Administrativo — JSL Empresa
-            </h1>
-            <p className="mt-2 text-sm text-zinc-600">
-              Acesso restrito a recrutadores e administradores autorizados. Faça login com sua conta
-              Google verificada.
-            </p>
-          </div>
-          {authError && (
-            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
-              {authError}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={handleLogin}
-            className="w-full py-3.5 px-6 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
-          >
-            Entrar com Google
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('/')}
-            className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 cursor-pointer"
-          >
-            Voltar para o portal público
-          </button>
-        </div>
-      </div>
-    );
-  }
 
-  if (!isAuthorized) {
-    return (
-      <div className="max-w-lg mx-auto px-4 py-16">
-        <div className="bg-white border border-zinc-200 rounded-2xl p-8 text-center space-y-4">
-          <ShieldAlert className="w-10 h-10 text-[#C8102E] mx-auto" aria-hidden="true" />
-          <h1 className="font-display text-xl font-bold text-zinc-950">
-            Acesso não autorizado
-          </h1>
-          <p className="text-sm text-zinc-600">
-            A conta <strong>{authUser.email}</strong> (UID:{' '}
-            <code className="font-mono-tabular text-xs bg-zinc-100 px-1.5 py-0.5 rounded">
-              {authUser.uid}
-            </code>
-            ) não possui permissão ativa de administração. Solicite ao responsável que habilite seu
-            UID na equipe de RH.
-          </p>
-          <div className="flex justify-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => signOut(auth)}
-              className="px-5 py-2.5 text-sm font-semibold text-white bg-zinc-900 rounded-xl cursor-pointer"
+          {loginError && (
+            <div
+              role="alert"
+              className="p-3 text-sm text-red-800 bg-red-50 border border-red-200 rounded-xl"
             >
-              Sair desta conta
-            </button>
+              {loginError}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="admin-username"
+                className="block text-sm font-semibold text-zinc-800 mb-1.5"
+              >
+                Usuário
+              </label>
+              <input
+                id="admin-username"
+                type="text"
+                required
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Digite seu usuário"
+                className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="admin-password"
+                className="block text-sm font-semibold text-zinc-800 mb-1.5"
+              >
+                Senha
+              </label>
+              <input
+                id="admin-password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Digite sua senha"
+                className="w-full px-4 py-3 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loggingIn}
+            className="w-full py-3.5 px-6 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl disabled:opacity-60 cursor-pointer transition-colors"
+          >
+            {loggingIn ? 'Autenticando...' : 'Entrar no painel'}
+          </button>
+
+          <div className="pt-2 text-center">
             <button
               type="button"
               onClick={() => onNavigate('/')}
-              className="px-5 py-2.5 text-sm font-semibold text-zinc-700 bg-zinc-100 rounded-xl cursor-pointer"
+              className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 cursor-pointer"
             >
-              Portal público
+              Voltar ao portal público
             </button>
           </div>
-        </div>
+        </form>
       </div>
     );
   }
 
-  const sidebarItems: Array<{ id: AdminTab; label: string; icon: typeof LayoutDashboard }> = [
-    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'candidates', label: 'Candidatos', icon: Users },
-    { id: 'jobs', label: 'Vagas', icon: Briefcase },
-    { id: 'messages', label: 'Mensagens', icon: Mail },
-    { id: 'settings', label: 'Empresa e Equipe', icon: Settings },
-    { id: 'audit', label: 'Auditoria e Produção', icon: History },
-  ];
+  const channelUrl = `${window.location.origin}${session.channelPath}`;
+  const stats = listData?.stats || { total: 0, novas: 0, emAcompanhamento: 0, finalizadas: 0 };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-zinc-50">
-      {/* Menu Lateral Administrativo */}
-      <aside className="lg:w-64 bg-zinc-900 text-zinc-200 shrink-0 flex flex-col justify-between border-r border-zinc-800">
-        <div className="p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Painel Administrativo
-          </p>
-          <p className="mt-1 font-display text-base font-bold text-white truncate">
-            {authUser.email}
-          </p>
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-neutral-50">
+      {/* Menu lateral grafite, branco e vermelho */}
+      <aside className="lg:w-72 bg-zinc-900 text-zinc-100 shrink-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-800">
+        <div className="p-5 sm:p-6 space-y-6">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-zinc-400">Recrutador autenticado</p>
+            <p className="font-display text-lg font-extrabold text-white truncate">
+              {session.displayName}
+            </p>
+            <p className="font-mono-tabular text-xs text-zinc-400">
+              @{session.username} · Canal {session.channelPath}
+            </p>
+          </div>
 
-          <nav aria-label="Menu administrativo" className="mt-6 flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0">
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setTab(item.id)}
-                  className={`flex items-center gap-3 px-3.5 py-2.5 text-sm font-medium rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    active
-                      ? 'bg-[#C8102E] text-white'
-                      : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+          {/* Link exclusivo do canal */}
+          <div className="bg-zinc-800/80 border border-zinc-700 rounded-xl p-4 space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-zinc-300">Link exclusivo do seu canal</p>
+              <p className="mt-1 font-mono-tabular text-xs text-zinc-400 break-all">{channelUrl}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleCopyChannelLink}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-lg cursor-pointer transition-colors"
+              >
+                {copiedChannel ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    Copiado
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                    Copiar link
+                  </>
+                )}
+              </button>
+              <a
+                href={session.channelPath}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-zinc-200 bg-zinc-700 hover:bg-zinc-600 rounded-lg"
+                title="Abrir canal em nova aba"
+              >
+                <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                Abrir
+              </a>
+            </div>
+          </div>
+
+          <nav aria-label="Navegação administrativa" className="space-y-1">
+            <div className="flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold text-white bg-zinc-800 rounded-xl border border-zinc-700">
+              <LayoutDashboard className="w-4 h-4 text-[#C8102E]" aria-hidden="true" />
+              <span>Candidaturas do Canal</span>
+            </div>
           </nav>
         </div>
 
-        <div className="p-5 border-t border-zinc-800 hidden lg:block">
+        <div className="p-5 sm:p-6 border-t border-zinc-800 flex items-center justify-between lg:block space-y-0 lg:space-y-3">
           <button
             type="button"
-            onClick={() => signOut(auth)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-zinc-300 hover:text-white border border-zinc-700 rounded-xl cursor-pointer"
+            onClick={handleLogout}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl cursor-pointer transition-colors"
           >
             <LogOut className="w-4 h-4" aria-hidden="true" />
-            Encerrar sessão
+            Sair do painel
           </button>
         </div>
       </aside>
 
-      {/* Conteúdo Principal do Painel */}
-      <div className="flex-1 p-4 sm:p-8 max-w-[1300px] w-full space-y-6">
-        {bannerMsg && (
-          <div className="flex items-center justify-between gap-3 bg-white border border-zinc-300 rounded-xl px-4 py-3 text-sm text-zinc-900">
-            <span>{bannerMsg}</span>
+      {/* Conteúdo Principal */}
+      <div className="flex-1 p-4 sm:p-8 max-w-[1360px] w-full space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
+              Candidaturas recebidas ({session.channelPath})
+            </h1>
+            <p className="text-sm text-zinc-600">
+              Visualização exclusiva das inscrições enviadas pelo seu link de divulgação.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={loadApplications}
+            disabled={loadingList}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-800 bg-white border border-zinc-300 hover:border-zinc-400 rounded-xl cursor-pointer self-start sm:self-auto"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingList ? 'animate-spin' : ''}`} aria-hidden="true" />
+            Atualizar lista
+          </button>
+        </div>
+
+        {/* 4 Cards KPI */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+            <p className="text-xs font-medium text-zinc-500">Total</p>
+            <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tabular-nums">
+              {stats.total}
+            </p>
+          </div>
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+            <p className="text-xs font-medium text-zinc-500">Novas (Recebida)</p>
+            <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-[#C8102E] tabular-nums">
+              {stats.novas}
+            </p>
+          </div>
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+            <p className="text-xs font-medium text-zinc-500">Em acompanhamento</p>
+            <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tabular-nums">
+              {stats.emAcompanhamento}
+            </p>
+          </div>
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+            <p className="text-xs font-medium text-zinc-500">Finalizadas</p>
+            <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-emerald-700 tabular-nums">
+              {stats.finalizadas}
+            </p>
+          </div>
+        </div>
+
+        {/* Barra de Filtros, Datas America/Sao_Paulo e Exportação CSV */}
+        <div className="bg-white border border-zinc-200 rounded-2xl p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="lg:col-span-2 relative">
+              <Search
+                className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Buscar nome, e-mail, telefone, cidade ou protocolo..."
+                aria-label="Buscar candidaturas"
+                className="w-full pl-10 pr-3 py-2.5 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+              />
+            </div>
+
+            <select
+              value={jobFilter}
+              onChange={(e) => {
+                setJobFilter(e.target.value);
+                setPage(1);
+              }}
+              aria-label="Filtrar por cargo"
+              className="px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+            >
+              <option value="all">Todos os cargos</option>
+              {DEFAULT_JOBS.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.title}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              aria-label="Filtrar por status"
+              className="px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+            >
+              <option value="all">Todos os status</option>
+              {APPLICATION_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              aria-label="Itens por página"
+              className="px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+            >
+              <option value={15}>15 por página</option>
+              <option value={25}>25 por página</option>
+              <option value={50}>50 por página</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pt-3 border-t border-zinc-100">
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-600 mb-1">
+                  Data inicial (São Paulo)
+                </label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setPage(1);
+                  }}
+                  className="px-3 py-2 text-sm border border-zinc-300 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-zinc-600 mb-1">
+                  Data final (São Paulo)
+                </label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setPage(1);
+                  }}
+                  className="px-3 py-2 text-sm border border-zinc-300 rounded-xl"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => applyDateShortcut(0)}
+                  className="px-3 py-2 text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDateShortcut(7)}
+                  className="px-3 py-2 text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
+                >
+                  7 dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDateShortcut(30)}
+                  className="px-3 py-2 text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
+                >
+                  30 dias
+                </button>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="px-3 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-950 rounded-xl cursor-pointer"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleExportCsv('page')}
+                disabled={!listData || listData.items.length === 0}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl disabled:opacity-50 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-zinc-700" aria-hidden="true" />
+                Exportar CSV (página atual)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportCsv('filtered')}
+                disabled={!listData || listData.total === 0}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-50 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" aria-hidden="true" />
+                Exportar CSV (todo o filtro)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Estado de erro */}
+        {listError && (
+          <div
+            role="alert"
+            className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center justify-between gap-4 text-sm text-red-900"
+          >
+            <span>{listError}</span>
             <button
               type="button"
-              onClick={() => setBannerMsg('')}
-              aria-label="Fechar aviso"
-              className="text-zinc-500 hover:text-zinc-900 cursor-pointer"
+              onClick={loadApplications}
+              className="px-3 py-1.5 text-xs font-bold bg-white border border-red-300 rounded-lg cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              Tentar novamente
             </button>
           </div>
         )}
 
-        {/* TAB: DASHBOARD */}
-        {tab === 'dashboard' && (
-          <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h1 className="font-display text-2xl font-extrabold text-zinc-950">
-                  Dashboard de Recrutamento
-                </h1>
-                <p className="text-sm text-zinc-600">
-                  Acompanhamento em tempo real das candidaturas registradas no Firestore.
-                </p>
-              </div>
-              {jobs.length === 0 && (
-                <button
-                  type="button"
-                  onClick={handleSeedJobs}
-                  className="px-4 py-2.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer"
-                >
-                  Inicializar 5 vagas padrão no banco
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-zinc-500">Total de candidaturas</p>
-                <p className="mt-1 font-display text-2xl font-extrabold text-zinc-950 tabular-nums">
-                  {metrics.total}
-                </p>
-              </div>
-              <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-zinc-500">Recebidas hoje</p>
-                <p className="mt-1 font-display text-2xl font-extrabold text-[#C8102E] tabular-nums">
-                  {metrics.todayCount}
-                </p>
-              </div>
-              <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-zinc-500">Em análise / contato</p>
-                <p className="mt-1 font-display text-2xl font-extrabold text-zinc-950 tabular-nums">
-                  {metrics.inAnalysis}
-                </p>
-              </div>
-              <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-zinc-500">Em fase de entrevista</p>
-                <p className="mt-1 font-display text-2xl font-extrabold text-zinc-950 tabular-nums">
-                  {metrics.interviewing}
-                </p>
-              </div>
-              <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-zinc-500">Processos finalizados</p>
-                <p className="mt-1 font-display text-2xl font-extrabold text-zinc-950 tabular-nums">
-                  {metrics.finished}
-                </p>
-              </div>
-            </div>
-
-            {/* Gráficos simples e funcionais */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white border border-zinc-200 rounded-2xl p-6">
-                <h2 className="font-display text-base font-bold text-zinc-950 mb-4">
-                  Candidaturas por vaga
-                </h2>
-                {metrics.byJob.length === 0 ? (
-                  <p className="text-sm text-zinc-500">
-                    Nenhuma candidatura recebida até o momento.
-                  </p>
+        {/* Tabela de Candidaturas */}
+        <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
+                  <th className="py-3.5 px-4">Candidato</th>
+                  <th className="py-3.5 px-4">Vaga</th>
+                  <th className="py-3.5 px-4">Cidade/UF</th>
+                  <th className="py-3.5 px-4">Recebimento (SP)</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4 text-right">Ficha</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 text-sm">
+                {loadingList ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="py-4 px-4">
+                        <div className="h-4 w-40 bg-zinc-200 rounded" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 w-32 bg-zinc-200 rounded" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 w-24 bg-zinc-200 rounded" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 w-28 bg-zinc-200 rounded" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 w-20 bg-zinc-200 rounded" />
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="h-7 w-20 bg-zinc-200 rounded ml-auto" />
+                      </td>
+                    </tr>
+                  ))
+                ) : !listData || listData.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-14 px-4 text-center">
+                      <Inbox className="w-8 h-8 text-zinc-400 mx-auto mb-2" aria-hidden="true" />
+                      <p className="font-display font-bold text-zinc-900">
+                        Nenhuma candidatura encontrada
+                      </p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Quando candidatos se inscreverem pelo link {session.channelPath}, eles
+                        aparecerão aqui automaticamente.
+                      </p>
+                    </td>
+                  </tr>
                 ) : (
-                  <div className="space-y-3">
-                    {metrics.byJob.map(([jobTitle, count]) => {
-                      const pct = Math.round((count / Math.max(1, metrics.total)) * 100);
-                      return (
-                        <div key={jobTitle} className="space-y-1">
-                          <div className="flex justify-between text-xs font-medium text-zinc-700">
-                            <span>{jobTitle}</span>
-                            <span className="font-mono-tabular font-bold">
-                              {count} ({pct}%)
-                            </span>
-                          </div>
-                          <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#C8102E]"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white border border-zinc-200 rounded-2xl p-6">
-                <h2 className="font-display text-base font-bold text-zinc-950 mb-4">
-                  Funil por etapa do processo
-                </h2>
-                <div className="space-y-3">
-                  {APPLICATION_STATUSES.map((st) => {
-                    const count = metrics.byStatus[st] || 0;
-                    const pct =
-                      metrics.total > 0 ? Math.round((count / metrics.total) * 100) : 0;
-                    return (
-                      <div key={st} className="space-y-1">
-                        <div className="flex justify-between text-xs font-medium text-zinc-700">
-                          <span>{st}</span>
-                          <span className="font-mono-tabular font-bold">{count}</span>
-                        </div>
-                        <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-zinc-800" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB: CANDIDATOS */}
-        {tab === 'candidates' && (
-          <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h1 className="font-display text-2xl font-extrabold text-zinc-950">
-                  Gestão de Candidatos
-                </h1>
-                <p className="text-sm text-zinc-600 tabular-nums">
-                  {filteredApplications.length} candidatura(s) exibida(s)
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportCsv}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-800 bg-white border border-zinc-300 hover:border-zinc-400 rounded-xl cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-700" aria-hidden="true" />
-                  Exportar CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
-                >
-                  <FileText className="w-4 h-4" aria-hidden="true" />
-                  Exportar PDF
-                </button>
-              </div>
-            </div>
-
-            {/* Filtros */}
-            <div className="bg-white border border-zinc-200 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Nome ou protocolo..."
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <select
-                value={filterJobId}
-                onChange={(e) => setFilterJobId(e.target.value)}
-                className="px-3 py-2 text-sm bg-white border border-zinc-300 rounded-xl"
-              >
-                <option value="all">Todas as vagas</option>
-                {(jobs.length ? jobs : DEFAULT_JOBS).map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {j.title}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={filterCity}
-                onChange={(e) => setFilterCity(e.target.value)}
-                placeholder="Filtrar por cidade..."
-                className="px-3 py-2 text-sm border border-zinc-300 rounded-xl"
-              />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 text-sm bg-white border border-zinc-300 rounded-xl"
-              >
-                <option value="all">Todos os status</option>
-                {APPLICATION_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={filterAvailability}
-                onChange={(e) => setFilterAvailability(e.target.value)}
-                className="px-3 py-2 text-sm bg-white border border-zinc-300 rounded-xl"
-              >
-                <option value="all">Qualquer disponibilidade</option>
-                <option value="viagens">Disponível para viagens</option>
-                <option value="pernoite">Disponível para pernoite</option>
-                <option value="imediato">Início imediato</option>
-              </select>
-              <select
-                value={filterSkill}
-                onChange={(e) => setFilterSkill(e.target.value)}
-                className="px-3 py-2 text-sm bg-white border border-zinc-300 rounded-xl"
-              >
-                <option value="all">Qualquer qualificação</option>
-                <option value="Separação de pedidos">Separação de pedidos</option>
-                <option value="Conferência de mercadorias">Conferência de mercadorias</option>
-                <option value="Transporte rodoviário">Transporte rodoviário</option>
-                <option value="Operação de empilhadeira">Operação de empilhadeira</option>
-                <option value="Entregas">Entregas</option>
-              </select>
-              <input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                aria-label="Filtrar a partir da data"
-                className="px-3 py-2 text-sm border border-zinc-300 rounded-xl"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setFilterJobId('all');
-                  setFilterCity('');
-                  setFilterStatus('all');
-                  setFilterAvailability('all');
-                  setFilterSkill('all');
-                  setFilterDateFrom('');
-                }}
-                className="px-3 py-2 text-xs font-semibold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
-              >
-                Limpar filtros
-              </button>
-            </div>
-
-            {/* Tabela */}
-            <div className="bg-white border border-zinc-200 rounded-2xl overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
-                    <th className="py-3 px-4">Protocolo</th>
-                    <th className="py-3 px-4">Candidato</th>
-                    <th className="py-3 px-4">Vaga</th>
-                    <th className="py-3 px-4">Cidade/UF</th>
-                    <th className="py-3 px-4">Data</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 text-sm">
-                  {loadingData ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-zinc-500">
-                        Carregando candidaturas...
+                  listData.items.map((item) => (
+                    <tr key={item.id} className="hover:bg-zinc-50 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <p className="font-semibold text-zinc-950">{item.candidateName}</p>
+                        <p className="font-mono-tabular text-xs text-zinc-500">{item.protocol}</p>
                       </td>
-                    </tr>
-                  ) : filteredApplications.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-zinc-500">
-                        Nenhuma candidatura encontrada para os filtros aplicados.
+                      <td className="py-3.5 px-4 text-zinc-800">{item.jobTitle}</td>
+                      <td className="py-3.5 px-4 text-zinc-600">
+                        {item.candidateCity}/{item.candidateState}
                       </td>
-                    </tr>
-                  ) : (
-                    filteredApplications.map((app) => (
-                      <tr key={app.id} className="hover:bg-zinc-50">
-                        <td className="py-3 px-4 font-mono-tabular text-xs font-semibold text-[#C8102E]">
-                          {app.protocol}
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-zinc-900">
-                          {app.personal.fullName}
-                        </td>
-                        <td className="py-3 px-4 text-zinc-700">{app.jobTitle}</td>
-                        <td className="py-3 px-4 text-zinc-600">
-                          {app.personal.city}/{app.personal.state}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-zinc-500 tabular-nums">
-                          {formatTimestampBR(app.createdAt)}
-                        </td>
-                        <td className="py-3 px-4 text-xs font-semibold text-zinc-900">
-                          {app.status}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => openCandidateModal(app)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                            Abrir ficha
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB: GERENCIAMENTO DE VAGAS */}
-        {tab === 'jobs' && (
-          <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h1 className="font-display text-2xl font-extrabold text-zinc-950">
-                  Gerenciamento de Vagas
-                </h1>
-                <p className="text-sm text-zinc-600">
-                  Edite salários, benefícios, requisitos, escalas e controle publicação/encerramento.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {jobs.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={handleSeedJobs}
-                    className="px-4 py-2.5 text-xs font-bold text-zinc-900 bg-white border border-zinc-300 rounded-xl cursor-pointer"
-                  >
-                    Carregar 5 vagas padrão
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingJob({
-                      id: `vaga-${Date.now().toString(36)}`,
-                      slug: `nova-vaga-${Date.now().toString(36)}`,
-                      title: '',
-                      roleType: 'outro',
-                      department: 'Logística',
-                      location: 'Centro de Distribuição',
-                      salaryMonthly: 2000,
-                      salaryDisplay: 'R$ 2.000,00 mensais',
-                      salaryConfirmed: false,
-                      collectiveAgreementNote:
-                        'Confirmar piso salarial e convenção coletiva antes da publicação.',
-                      schedule: 'A definir conforme legislação',
-                      contractType: 'CLT — Carteira assinada',
-                      experienceRequired: false,
-                      experienceNote: 'Conforme condições da vaga.',
-                      summary: '',
-                      requirements: [],
-                      conditions: [],
-                      activities: [],
-                      benefits: [...STANDARD_BENEFITS],
-                      imageUrl: '/src/assets/images/warehouse_parcel_check_1794554551055.jpg',
-                      status: 'inactive',
-                      sortOrder: jobs.length + 1,
-                    })
-                  }
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" aria-hidden="true" />
-                  Nova vaga
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              {jobs.map((job) => (
-                <div
-                  key={job.id}
-                  className="bg-white border border-zinc-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2.5">
-                      <h2 className="font-display text-lg font-bold text-zinc-950">
-                        {job.title}
-                      </h2>
-                      <span className="text-xs font-semibold text-zinc-500">
-                        · Status: {job.status === 'active' ? 'Ativa' : job.status === 'closed' ? 'Encerrada' : 'Inativa'}
-                      </span>
-                    </div>
-                    <p className="text-sm font-bold text-[#C8102E] tabular-nums">
-                      {job.salaryDisplay}{' '}
-                      <span className="font-normal text-xs text-zinc-500">
-                        ({job.salaryConfirmed ? 'Salário confirmado pelo RH' : 'Aguardando confirmação administrativa'})
-                      </span>
-                    </p>
-                    <p className="text-xs text-zinc-600">{job.schedule}</p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingJob(job)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                      Editar
-                    </button>
-                    {job.status !== 'active' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleQuickJobStatus(job, 'active')}
-                        className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl cursor-pointer"
-                      >
-                        Ativar / Reabrir
-                      </button>
-                    ) : (
-                      <>
+                      <td className="py-3.5 px-4 text-xs text-zinc-600 tabular-nums whitespace-nowrap">
+                        {formatDateTimeSaoPaulo(item.createdAt)}
+                      </td>
+                      <td className={`py-3.5 px-4 text-xs font-bold ${getStatusTextClass(item.status)}`}>
+                        {item.status}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
                         <button
                           type="button"
-                          onClick={() => handleQuickJobStatus(job, 'inactive')}
-                          className="px-3.5 py-2 text-xs font-semibold text-zinc-700 border border-zinc-300 rounded-xl cursor-pointer"
+                          onClick={() => openDetailDrawer(item.id)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-[#C8102E] rounded-lg cursor-pointer transition-colors"
                         >
-                          Desativar
+                          <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                          Ver ficha
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickJobStatus(job, 'closed')}
-                          className="px-3.5 py-2 text-xs font-semibold text-red-700 border border-red-200 rounded-xl cursor-pointer"
-                        >
-                          Encerrar vaga
-                        </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!authUser?.email) return;
-                        await deleteJobAdmin(job.id, job.title, authUser.email, authUser.uid);
-                        await loadAllAdminData();
-                        onJobsUpdated();
-                      }}
-                      className="p-2 text-zinc-400 hover:text-red-700 cursor-pointer"
-                      aria-label={`Excluir vaga ${job.title}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB: MENSAGENS DE CONTATO */}
-        {tab === 'messages' && (
-          <div className="space-y-4">
-            <h1 className="font-display text-2xl font-extrabold text-zinc-950">
-              Mensagens Recebidas
-            </h1>
-            {messages.length === 0 ? (
-              <div className="bg-white border border-zinc-200 rounded-2xl p-8 text-sm text-zinc-500">
-                Nenhuma mensagem enviada pela página de Contato até o momento.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className="bg-white border border-zinc-200 rounded-2xl p-5 space-y-2"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="font-bold text-zinc-950">{m.subject}</h2>
-                      <span className="text-xs text-zinc-500 tabular-nums">
-                        {formatTimestampBR(m.createdAt)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-600">
-                      {m.name} · {m.email} {m.phone ? `· ${m.phone}` : ''}
-                    </p>
-                    <p className="text-sm text-zinc-800 whitespace-pre-line pt-1">{m.message}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB: CONFIGURAÇÕES INSTITUCIONAIS E EQUIPE */}
-        {tab === 'settings' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <form
-              onSubmit={handleSaveSettings}
-              className="lg:col-span-7 bg-white border border-zinc-200 rounded-2xl p-6 space-y-4"
-            >
-              <h1 className="font-display text-xl font-extrabold text-zinc-950">
-                Dados Institucionais e Privacidade (LGPD)
-              </h1>
-              <p className="text-xs text-zinc-600">
-                Configure os dados reais da empresa controladora antes da veiculação de campanhas.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Nome de exibição (Marca)
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsForm.brandName}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({ ...s, brandName: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Subtítulo institucional
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsForm.brandSubtitle}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({ ...s, brandSubtitle: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Razão Social do Controlador
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsForm.legalName}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({ ...s, legalName: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">CNPJ</label>
-                  <input
-                    type="text"
-                    value={settingsForm.cnpj}
-                    onChange={(e) => setSettingsForm((s) => ({ ...s, cnpj: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Retenção LGPD (dias)
-                  </label>
-                  <input
-                    type="number"
-                    min={30}
-                    max={3650}
-                    value={settingsForm.retentionDays}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({
-                        ...s,
-                        retentionDays: parseInt(e.target.value || '180', 10),
-                      }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Endereço completo da empresa
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsForm.address}
-                    onChange={(e) => setSettingsForm((s) => ({ ...s, address: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    E-mail institucional
-                  </label>
-                  <input
-                    type="email"
-                    value={settingsForm.institutionalEmail}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({ ...s, institutionalEmail: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Telefone institucional
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsForm.institutionalPhone}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({ ...s, institutionalPhone: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Nome do Encarregado (DPO)
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsForm.dpoName}
-                    onChange={(e) => setSettingsForm((s) => ({ ...s, dpoName: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    E-mail do DPO (Privacidade)
-                  </label>
-                  <input
-                    type="email"
-                    value={settingsForm.dpoEmail}
-                    onChange={(e) => setSettingsForm((s) => ({ ...s, dpoEmail: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Aviso institucional de uso da marca
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={settingsForm.brandDisclaimer}
-                    onChange={(e) =>
-                      setSettingsForm((s) => ({ ...s, brandDisclaimer: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="px-6 py-3 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer"
-              >
-                Salvar configurações
-              </button>
-            </form>
-
-            <div className="lg:col-span-5 bg-white border border-zinc-200 rounded-2xl p-6 space-y-4">
-              <h2 className="font-display text-lg font-bold text-zinc-950">
-                Administradores Autorizados
-              </h2>
-              <p className="text-xs text-zinc-600">
-                Conceda acesso a outros recrutadores informando o UID do Firebase Auth e e-mail
-                Google verificado.
-              </p>
-
-              <form onSubmit={handleAddAdmin} className="space-y-3">
-                <input
-                  type="text"
-                  required
-                  value={newAdminUid}
-                  onChange={(e) => setNewAdminUid(e.target.value)}
-                  placeholder="UID do usuário no Firebase Auth"
-                  className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                />
-                <input
-                  type="email"
-                  required
-                  value={newAdminEmail}
-                  onChange={(e) => setNewAdminEmail(e.target.value)}
-                  placeholder="E-mail Google verificado"
-                  className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                />
-                <input
-                  type="text"
-                  required
-                  value={newAdminName}
-                  onChange={(e) => setNewAdminName(e.target.value)}
-                  placeholder="Nome completo do recrutador"
-                  className="w-full px-3.5 py-2.5 text-sm border border-zinc-300 rounded-xl"
-                />
-                <select
-                  value={newAdminRole}
-                  onChange={(e) => setNewAdminRole(e.target.value as 'recruiter' | 'super_admin')}
-                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
-                >
-                  <option value="recruiter">Recrutador (RH)</option>
-                  <option value="super_admin">Super Administrador</option>
-                </select>
-                <button
-                  type="submit"
-                  className="w-full py-2.5 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
-                >
-                  Autorizar administrador
-                </button>
-              </form>
-
-              <div className="pt-4 border-t border-zinc-200 space-y-2">
-                {adminUsers.map((adm) => (
-                  <div
-                    key={adm.uid}
-                    className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs"
-                  >
-                    <p className="font-bold text-zinc-900">{adm.name}</p>
-                    <p className="text-zinc-600">{adm.email}</p>
-                    <p className="text-zinc-500 mt-0.5">
-                      Perfil: {adm.role} · {adm.active ? 'Ativo' : 'Inativo'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB: AUDITORIA & CHECKLIST DE PRODUÇÃO */}
-        {tab === 'audit' && (
-          <div className="space-y-6">
-            <div className="bg-white border border-zinc-200 rounded-2xl p-6 space-y-3">
-              <div className="flex items-center gap-2 text-zinc-950">
-                <ClipboardCheck className="w-5 h-5 text-[#C8102E]" aria-hidden="true" />
-                <h2 className="font-display text-lg font-bold">
-                  Checklist Obrigatório Antes de Produção e Meta Ads
-                </h2>
-              </div>
-              <ul className="space-y-2 text-sm text-zinc-700">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#C8102E] shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Autorização de marca:</strong> confirmar direito de uso do nome
-                    comercial ou ajustar na aba &quot;Empresa e Equipe&quot; para sua razão social.
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#C8102E] shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Pisos salariais e convenções coletivas:</strong> validar juridicamente os
-                    salários anunciados (especialmente os cargos de R$ 1.800,00 — Auxiliar e
-                    Conferente) e marcar confirmação em cada vaga.
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#C8102E] shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Dados do Controlador LGPD:</strong> preencher CNPJ, razão social,
-                    endereço, telefone e e-mail do DPO reais.
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#C8102E] shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Meta Ads (Categoria Especial de Emprego):</strong> veicular anúncios
-                    enquadrados na Categoria Especial de Emprego, sem segmentação discriminatória e
-                    sem envio de dados pessoais via Pixel.
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="bg-white border border-zinc-200 rounded-2xl overflow-x-auto">
-              <div className="p-5 border-b border-zinc-200">
-                <h2 className="font-display text-lg font-bold text-zinc-950">
-                  Registro de Auditoria Administrativa
-                </h2>
-              </div>
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
-                    <th className="py-3 px-4">Data</th>
-                    <th className="py-3 px-4">Ação</th>
-                    <th className="py-3 px-4">Usuário</th>
-                    <th className="py-3 px-4">Detalhes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 text-xs">
-                  {auditLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td className="py-3 px-4 text-zinc-500 tabular-nums whitespace-nowrap">
-                        {formatTimestampBR(log.createdAt)}
                       </td>
-                      <td className="py-3 px-4 font-mono-tabular font-semibold text-zinc-900">
-                        {log.action}
-                      </td>
-                      <td className="py-3 px-4 text-zinc-700">{log.actorEmail}</td>
-                      <td className="py-3 px-4 text-zinc-600">{log.details}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+
+          {/* Paginação Real */}
+          {listData && (
+            <div className="px-4 py-3.5 border-t border-zinc-200 bg-zinc-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-zinc-600">
+              <p className="tabular-nums">
+                Exibindo página <strong>{listData.page}</strong> de{' '}
+                <strong>{listData.totalPages}</strong> · <strong>{listData.total}</strong>{' '}
+                resultado(s) no filtro
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={listData.page <= 1 || loadingList}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 font-semibold bg-white border border-zinc-300 rounded-lg disabled:opacity-40 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  disabled={listData.page >= listData.totalPages || loadingList}
+                  onClick={() => setPage((p) => Math.min(listData.totalPages, p + 1))}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 font-semibold bg-white border border-zinc-300 rounded-lg disabled:opacity-40 cursor-pointer"
+                >
+                  Próxima
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* MODAL DETALHES DO CANDIDATO */}
-      {selectedApp && (
+      {/* FICHA LATERAL COMPLETA (DRAWER) */}
+      {selectedId && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-black/50 flex justify-end"
           role="dialog"
           aria-modal="true"
-          aria-label={`Ficha do candidato ${selectedApp.personal.fullName}`}
+          aria-label="Ficha completa do candidato"
         >
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-6">
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-200 pb-4">
-              <div>
-                <p className="font-mono-tabular text-xs font-bold text-[#C8102E]">
-                  {selectedApp.protocol}
-                </p>
-                <h2 className="font-display text-2xl font-extrabold text-zinc-950">
-                  {selectedApp.personal.fullName}
-                </h2>
-                <p className="text-sm text-zinc-600">
-                  Vaga: <strong>{selectedApp.jobTitle}</strong> ({selectedApp.jobSalaryDisplay})
-                </p>
+          <div className="bg-white w-full max-w-2xl h-full overflow-y-auto shadow-2xl border-l border-zinc-200 flex flex-col">
+            <div className="sticky top-0 z-10 bg-zinc-900 text-white px-6 py-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                {detailData ? (
+                  <>
+                    <p className="font-mono-tabular text-xs font-bold text-red-400">
+                      {detailData.application.protocol} · Canal {detailData.application.channelPath}
+                    </p>
+                    <h2 className="font-display text-xl font-extrabold truncate">
+                      {detailData.application.personal.fullName}
+                    </h2>
+                    <p className="text-xs text-zinc-300 mt-0.5">
+                      {detailData.application.jobTitle} · {detailData.application.jobSalaryDisplay}
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-display font-bold">Ficha do Candidato</p>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedApp(null)}
-                aria-label="Fechar ficha"
-                className="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 cursor-pointer"
+                onClick={() => setSelectedId(null)}
+                aria-label="Fechar ficha lateral"
+                className="p-2 text-zinc-300 hover:text-white rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Controle de Status e Comentários Internos */}
-            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-5 space-y-4">
-              <h3 className="text-sm font-bold text-zinc-950">
-                Movimentação no Processo Seletivo
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Status atual
-                  </label>
-                  <select
-                    value={nextStatus}
-                    onChange={(e) => setNextStatus(e.target.value as ApplicationStatus)}
-                    className="w-full px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
-                  >
-                    {APPLICATION_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Comentário da movimentação (histórico)
-                  </label>
-                  <input
-                    type="text"
-                    value={statusComment}
-                    onChange={(e) => setStatusComment(e.target.value)}
-                    placeholder="Ex.: Entrevista agendada para terça-feira 10h"
-                    className="w-full px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Anotações internas restritas ao RH
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={internalNotes}
-                    onChange={(e) => setInternalNotes(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={handleUpdateCandidateStatus}
-                  className="px-5 py-2.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer"
-                >
-                  Salvar atualização de status
-                </button>
-
-                {!confirmDeleteApp ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteApp(true)}
-                    className="px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 border border-red-200 rounded-xl cursor-pointer"
-                  >
-                    Excluir dados (LGPD)
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-red-800">Confirmar exclusão definitiva?</span>
-                    <button
-                      type="button"
-                      onClick={handleDeleteCandidateLgpd}
-                      className="px-3 py-1.5 text-xs font-bold text-white bg-red-700 rounded-lg cursor-pointer"
-                    >
-                      Sim, excluir
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteApp(false)}
-                      className="px-3 py-1.5 text-xs font-semibold text-zinc-700 bg-zinc-200 rounded-lg cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Dados Completos */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-              <div className="space-y-2">
-                <h3 className="font-bold text-zinc-950 border-b border-zinc-200 pb-1">
-                  Contato e Localização
-                </h3>
-                <p>
-                  <strong>E-mail:</strong> {selectedApp.personal.email}
-                </p>
-                <p>
-                  <strong>Celular:</strong> {selectedApp.personal.phone}
-                </p>
-                {selectedApp.personal.whatsapp && (
-                  <p>
-                    <strong>WhatsApp:</strong> {selectedApp.personal.whatsapp}
-                  </p>
-                )}
-                <p>
-                  <strong>Cidade/UF:</strong> {selectedApp.personal.city}/
-                  {selectedApp.personal.state}{' '}
-                  {selectedApp.personal.cep ? `· CEP ${selectedApp.personal.cep}` : ''}
-                </p>
-                {!selectedApp.personal.deferFullAddress && (
-                  <p className="text-xs text-zinc-600">
-                    {selectedApp.personal.street}, {selectedApp.personal.number}{' '}
-                    {selectedApp.personal.neighborhood}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <h3 className="font-bold text-zinc-950 border-b border-zinc-200 pb-1">
-                  Escolaridade e Disponibilidade
-                </h3>
-                <p>
-                  <strong>Escolaridade:</strong> {selectedApp.education.educationLevel}
-                </p>
-                <p>
-                  <strong>Curso profissionalizante:</strong>{' '}
-                  {selectedApp.education.hasVocationalCourse}{' '}
-                  {selectedApp.education.vocationalCourseName
-                    ? `(${selectedApp.education.vocationalCourseName})`
-                    : ''}
-                </p>
-                <p>
-                  <strong>Conhecimentos:</strong>{' '}
-                  {(selectedApp.education.skills || []).join(', ') || 'Não informado'}
-                </p>
-                <p>
-                  <strong>Início:</strong> {selectedApp.availability.startTimeline} ·{' '}
-                  <strong>Viagens:</strong> {selectedApp.availability.travelAvailability} ·{' '}
-                  <strong>Pernoite:</strong> {selectedApp.availability.overnightStayAvailability}
-                </p>
-                <p>
-                  <strong>Pretensão salarial:</strong>{' '}
-                  {selectedApp.professionalSummary.salaryExpectation || 'Não informada'}
-                </p>
-              </div>
-            </div>
-
-            {/* Respostas Específicas da Vaga */}
-            <div className="space-y-2 text-sm">
-              <h3 className="font-bold text-zinc-950 border-b border-zinc-200 pb-1">
-                Respostas Específicas da Vaga
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                {Object.entries(selectedApp.roleSpecific || {}).map(([k, v]) =>
-                  v ? (
-                    <div key={k} className="bg-zinc-50 border border-zinc-200 rounded-lg p-2.5">
-                      <span className="font-semibold text-zinc-500 block">{k}</span>
-                      <span className="text-zinc-900 font-medium">{String(v)}</span>
-                    </div>
-                  ) : null
-                )}
-              </div>
-              {selectedApp.safetyAndAccessibility?.needsProcessAccommodation === 'Sim' && (
-                <p className="text-xs text-zinc-800 bg-zinc-50 border border-zinc-200 rounded-lg p-3">
-                  <strong>Adaptação solicitada para seleção:</strong>{' '}
-                  {selectedApp.safetyAndAccessibility.accommodationDetails}
+            <div className="p-6 space-y-6 flex-1">
+              {loadingDetail && (
+                <p className="text-sm text-zinc-500 py-8 text-center">
+                  Carregando dados completos da candidatura...
                 </p>
               )}
-            </div>
 
-            {/* Experiências e Anexos */}
-            {loadingDetails ? (
-              <p className="text-sm text-zinc-500">Carregando histórico e anexos...</p>
-            ) : (
-              <div className="space-y-5">
-                <div className="space-y-2">
-                  <h3 className="font-bold text-zinc-950 border-b border-zinc-200 pb-1 text-sm">
-                    Experiências Profissionais ({selectedDetails?.experiences.length || 0})
-                  </h3>
-                  {selectedDetails?.experiences.length ? (
-                    <div className="space-y-3">
-                      {selectedDetails.experiences.map((exp) => (
-                        <div
-                          key={exp.id}
-                          className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-xs space-y-1"
-                        >
-                          <p className="text-sm font-bold text-zinc-950">
-                            {exp.role} — {exp.companyName}
-                          </p>
-                          <p className="text-zinc-600">
-                            Período: {exp.startDate} até{' '}
-                            {exp.isCurrent ? 'Atual' : exp.endDate} ·{' '}
-                            <strong>{exp.durationLabel}</strong>
-                          </p>
-                          {exp.lastSalary && (
-                            <p className="text-zinc-700">
-                              <strong>Último salário informado:</strong> {exp.lastSalary}
-                            </p>
-                          )}
-                          {exp.dailyActivities && (
-                            <p className="text-zinc-700">
-                              <strong>Atividades:</strong> {exp.dailyActivities}
-                            </p>
-                          )}
-                          {exp.equipmentUsed && (
-                            <p className="text-zinc-700">
-                              <strong>Veículos/Equipamentos:</strong> {exp.equipmentUsed}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-zinc-500">Sem experiências cadastradas.</p>
-                  )}
+              {detailError && (
+                <div
+                  role="alert"
+                  className="p-3.5 text-sm text-red-800 bg-red-50 border border-red-200 rounded-xl"
+                >
+                  {detailError}
                 </div>
+              )}
 
-                <div className="space-y-2">
-                  <h3 className="font-bold text-zinc-950 border-b border-zinc-200 pb-1 text-sm">
-                    Anexos Privados ({selectedDetails?.attachments.length || 0})
-                  </h3>
-                  {selectedDetails?.attachments.length ? (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedDetails.attachments.map((att) => (
-                        <button
-                          key={att.id}
-                          type="button"
-                          onClick={() => handleDownloadAttachment(att)}
-                          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
-                        >
-                          <Download className="w-3.5 h-3.5 text-[#C8102E]" aria-hidden="true" />
-                          {att.originalName} ({att.category})
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-zinc-500">Nenhum anexo enviado.</p>
-                  )}
-                </div>
+              {detailData && (
+                <>
+                  {/* Contatos rápidos */}
+                  <div className="flex flex-wrap gap-2">
+                    <a
+                      href={`mailto:${detailData.application.personal.email}`}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl"
+                    >
+                      <Mail className="w-4 h-4 text-[#C8102E]" aria-hidden="true" />
+                      E-mail
+                    </a>
+                    <a
+                      href={`https://wa.me/55${(
+                        detailData.application.personal.whatsapp ||
+                        detailData.application.personal.phone
+                      ).replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl"
+                    >
+                      <MessageCircle className="w-4 h-4" aria-hidden="true" />
+                      WhatsApp
+                    </a>
+                  </div>
 
-                {selectedDetails?.history && selectedDetails.history.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="font-bold text-zinc-950 border-b border-zinc-200 pb-1 text-sm">
-                      Histórico de Alterações
+                  {/* Alteração de Status e Notas Internas */}
+                  <form
+                    onSubmit={handleSaveStatusAndNotes}
+                    className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-4"
+                  >
+                    <h3 className="font-display text-sm font-bold text-zinc-950">
+                      Gerenciar Status e Anotações Internas
                     </h3>
-                    <ul className="space-y-1.5 text-xs text-zinc-600">
-                      {selectedDetails.history.map((h) => (
-                        <li key={h.id}>
-                          <strong>{formatTimestampBR(h.createdAt)}</strong> · {h.fromStatus} →{' '}
-                          <strong>{h.toStatus}</strong> ({h.changedByEmail}): {h.comment}
+
+                    {updateFeedback && (
+                      <p className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                        {updateFeedback}
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Status do processo
+                        </label>
+                        <select
+                          value={nextStatus}
+                          onChange={(e) => setNextStatus(e.target.value as ApplicationStatus)}
+                          className="w-full px-3 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+                        >
+                          {APPLICATION_STATUSES.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Comentário no histórico
+                        </label>
+                        <input
+                          type="text"
+                          value={statusComment}
+                          onChange={(e) => setStatusComment(e.target.value)}
+                          placeholder="Ex.: Contato realizado via WhatsApp"
+                          className="w-full px-3 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                        Notas internas do recrutador
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={internalNotes}
+                        onChange={(e) => setInternalNotes(e.target.value)}
+                        placeholder="Observações privadas sobre entrevistas ou perfil..."
+                        className="w-full px-3 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingUpdate}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer disabled:opacity-60"
+                    >
+                      {savingUpdate ? 'Salvando...' : 'Salvar atualização'}
+                    </button>
+                  </form>
+
+                  {/* 1. Dados Pessoais e Endereço */}
+                  <section className="space-y-2 text-sm">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Dados Pessoais e Contato
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-zinc-700">
+                      <p>
+                        <strong>Recebido em:</strong>{' '}
+                        {formatDateTimeSaoPaulo(detailData.application.createdAt)}
+                      </p>
+                      <p>
+                        <strong>E-mail:</strong> {detailData.application.personal.email}
+                      </p>
+                      <p>
+                        <strong>Telefone:</strong> {detailData.application.personal.phone}
+                      </p>
+                      <p>
+                        <strong>WhatsApp:</strong>{' '}
+                        {detailData.application.personal.whatsapp || 'Mesmo do celular'}
+                      </p>
+                      <p>
+                        <strong>Cidade/UF:</strong> {detailData.application.personal.city}/
+                        {detailData.application.personal.state}
+                      </p>
+                      <p>
+                        <strong>CEP:</strong> {detailData.application.personal.cep || 'Não informado'}
+                      </p>
+                      {!detailData.application.personal.deferFullAddress && (
+                        <p className="sm:col-span-2">
+                          <strong>Endereço:</strong> {detailData.application.personal.street},{' '}
+                          {detailData.application.personal.number}{' '}
+                          {detailData.application.personal.complement} —{' '}
+                          {detailData.application.personal.neighborhood}{' '}
+                          {detailData.application.personal.reference
+                            ? `(Ref.: ${detailData.application.personal.reference})`
+                            : ''}
+                        </p>
+                      )}
+                    </div>
+                  </section>
+
+                  {/* 2. Escolaridade e Qualificações */}
+                  <section className="space-y-2 text-xs text-zinc-700">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Escolaridade e Qualificações
+                    </h3>
+                    <p>
+                      <strong>Escolaridade:</strong>{' '}
+                      {detailData.application.education.educationLevel}
+                    </p>
+                    <p>
+                      <strong>Curso profissionalizante:</strong>{' '}
+                      {detailData.application.education.hasVocationalCourse}
+                      {detailData.application.education.vocationalCourseName
+                        ? ` — ${detailData.application.education.vocationalCourseName} (Certificado: ${
+                            detailData.application.education.hasCourseCertificate || 'Não informado'
+                          })`
+                        : ''}
+                    </p>
+                    <p>
+                      <strong>Experiência em transporte/logística:</strong>{' '}
+                      {detailData.application.education.hasLogisticsExperience}
+                    </p>
+                    {detailData.application.education.performedActivitiesText && (
+                      <p>
+                        <strong>Atividades realizadas:</strong>{' '}
+                        {detailData.application.education.performedActivitiesText}
+                      </p>
+                    )}
+                    <p>
+                      <strong>Conhecimentos:</strong>{' '}
+                      {(detailData.application.education.skills || []).join(', ') || 'Nenhum marcado'}
+                    </p>
+                  </section>
+
+                  {/* 3. Resumo e Experiências Profissionais */}
+                  <section className="space-y-3 text-xs text-zinc-700">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Histórico Profissional ({detailData.experiences.length})
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <p>
+                        <strong>Já trabalhou antes:</strong>{' '}
+                        {detailData.application.professionalSummary.hasWorkedBefore}
+                      </p>
+                      <p>
+                        <strong>Empregado atualmente:</strong>{' '}
+                        {detailData.application.professionalSummary.currentlyEmployed || '—'}
+                      </p>
+                      <p>
+                        <strong>Tempo total em logística:</strong>{' '}
+                        {detailData.application.professionalSummary.totalLogisticsExperience || '—'}
+                      </p>
+                      <p>
+                        <strong>Pretensão salarial:</strong>{' '}
+                        {detailData.application.professionalSummary.salaryExpectation || 'Não informada'}
+                      </p>
+                      <p>
+                        <strong>Início disponível:</strong>{' '}
+                        {detailData.application.professionalSummary.startAvailability}
+                      </p>
+                    </div>
+
+                    {detailData.experiences.map((exp, idx) => (
+                      <div
+                        key={exp.id || idx}
+                        className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-1"
+                      >
+                        <p className="text-sm font-bold text-zinc-950">
+                          {exp.role} — {exp.companyName}
+                        </p>
+                        <p className="text-zinc-600">
+                          Área: {exp.area || '—'} · Período: {exp.startDate} até{' '}
+                          {exp.isCurrent ? 'Atual' : exp.endDate} ·{' '}
+                          <strong>{exp.durationLabel}</strong>
+                        </p>
+                        <p>
+                          Carteira assinada: {exp.signedCard || '—'} · Último salário:{' '}
+                          {exp.lastSalary || 'Não informado'}
+                        </p>
+                        {exp.benefits && <p>Benefícios: {exp.benefits}</p>}
+                        {exp.dailyActivities && <p>Atividades: {exp.dailyActivities}</p>}
+                        {exp.responsibilities && <p>Responsabilidades: {exp.responsibilities}</p>}
+                        {exp.equipmentUsed && <p>Veículos/Equipamentos: {exp.equipmentUsed}</p>}
+                        {exp.leaveReason && <p>Motivo da saída: {exp.leaveReason}</p>}
+                        {exp.notes && <p>Observações: {exp.notes}</p>}
+                      </div>
+                    ))}
+                  </section>
+
+                  {/* 4. Disponibilidade Profissional */}
+                  <section className="space-y-2 text-xs text-zinc-700">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Disponibilidade Profissional
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      <p>Horários diferentes: {detailData.application.availability.flexibleHours}</p>
+                      <p>Turnos: {detailData.application.availability.shiftWork}</p>
+                      <p>
+                        Finais de semana (escala):{' '}
+                        {detailData.application.availability.weekendsPerSchedule}
+                      </p>
+                      <p>Escala da vaga: {detailData.application.availability.jobScheduleFit}</p>
+                      <p>Viagens: {detailData.application.availability.travelAvailability}</p>
+                      <p>
+                        Pernoites fora da cidade:{' '}
+                        {detailData.application.availability.overnightStayAvailability}
+                      </p>
+                      <p>Treinamentos: {detailData.application.availability.trainingAvailability}</p>
+                      <p>Início atividades: {detailData.application.availability.startTimeline}</p>
+                      <p>
+                        Transporte próprio:{' '}
+                        {detailData.application.availability.hasOwnTransport || 'Não informado'}
+                      </p>
+                    </div>
+                    {detailData.application.availability.scheduleLimitations && (
+                      <p>
+                        <strong>Limitações informadas:</strong>{' '}
+                        {detailData.application.availability.scheduleLimitations}
+                      </p>
+                    )}
+                  </section>
+
+                  {/* 5. Respostas Específicas da Vaga */}
+                  <section className="space-y-2 text-xs text-zinc-700">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Respostas Específicas da Vaga
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {Object.entries(detailData.application.roleSpecific || {}).map(([k, v]) =>
+                        v ? (
+                          <div
+                            key={k}
+                            className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg"
+                          >
+                            <span className="text-zinc-500 block">
+                              {ROLE_SPECIFIC_LABELS[k] || k}
+                            </span>
+                            <span className="font-semibold text-zinc-950">{String(v)}</span>
+                          </div>
+                        ) : null
+                      )}
+                    </div>
+                  </section>
+
+                  {/* 6. Segurança e Acessibilidade + Privacidade */}
+                  <section className="space-y-1.5 text-xs text-zinc-700">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Segurança, Acessibilidade e LGPD
+                    </h3>
+                    <p>
+                      Ciência atividades essenciais:{' '}
+                      {detailData.application.safetyAndAccessibility.confirmedEssentialTasks
+                        ? 'Sim'
+                        : 'Não'}
+                    </p>
+                    <p>
+                      Ciência normas de segurança:{' '}
+                      {detailData.application.safetyAndAccessibility.awareSafetyAndTraining
+                        ? 'Sim'
+                        : 'Não'}
+                    </p>
+                    <p>
+                      Adaptação no processo seletivo:{' '}
+                      {detailData.application.safetyAndAccessibility.needsProcessAccommodation}
+                      {detailData.application.safetyAndAccessibility.accommodationDetails
+                        ? ` — ${detailData.application.safetyAndAccessibility.accommodationDetails}`
+                        : ''}
+                    </p>
+                    <p>
+                      Ciência LGPD: {detailData.application.lgpdConsent ? 'Confirmada' : 'Não'} ·
+                      Banco de talentos:{' '}
+                      {detailData.application.talentPoolConsent ? 'Autorizado' : 'Não autorizado'}
+                    </p>
+                  </section>
+
+                  {/* 7. Anexos Privados */}
+                  <section className="space-y-2 text-xs">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Anexos Privados ({detailData.attachments.length})
+                    </h3>
+                    {detailData.attachments.length === 0 ? (
+                      <p className="text-zinc-500">Nenhum anexo enviado pelo candidato.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {detailData.attachments.map((att) => (
+                          <button
+                            key={att.fileId}
+                            type="button"
+                            disabled={downloadingFileId === att.fileId}
+                            onClick={() => handleDownloadAttachment(att.fileId, att.originalName)}
+                            className="inline-flex items-center gap-2 px-3.5 py-2 font-semibold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer disabled:opacity-60"
+                          >
+                            <Download className="w-3.5 h-3.5 text-[#C8102E]" aria-hidden="true" />
+                            <span>
+                              {att.originalName} ({att.category} ·{' '}
+                              {Math.max(1, Math.round(att.sizeBytes / 1024))} KB)
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* 8. Histórico de Alterações */}
+                  <section className="space-y-2 text-xs">
+                    <h3 className="font-display text-sm font-bold text-zinc-950 border-b border-zinc-200 pb-1.5">
+                      Histórico de Status
+                    </h3>
+                    <ul className="space-y-2 text-zinc-600">
+                      {detailData.history.map((h) => (
+                        <li
+                          key={h.id}
+                          className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg"
+                        >
+                          <span className="font-mono-tabular text-[11px] text-zinc-500">
+                            {formatDateTimeSaoPaulo(h.createdAt)}
+                          </span>{' '}
+                          · {h.fromStatus ? `${h.fromStatus} → ` : ''}
+                          <strong className="text-zinc-950">{h.toStatus}</strong> por{' '}
+                          <strong>{h.changedBy}</strong>
+                          {h.comment ? <p className="mt-0.5 text-zinc-700">{h.comment}</p> : null}
                         </li>
                       ))}
                     </ul>
-                  </div>
-                )}
-              </div>
-            )}
+                  </section>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* MODAL DE EDIÇÃO / CRIAÇÃO DE VAGA */}
-      {editingJob && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Editar vaga"
-        >
-          <form
-            onSubmit={handleSaveJobForm}
-            className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-4"
-          >
-            <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
-              <h2 className="font-display text-xl font-bold text-zinc-950">
-                Configurar Vaga
-              </h2>
-              <button
-                type="button"
-                onClick={() => setEditingJob(null)}
-                className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Título da vaga
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingJob.title}
-                  onChange={(e) => setEditingJob({ ...editingJob, title: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Tipo de questionário específico
-                </label>
-                <select
-                  value={editingJob.roleType}
-                  onChange={(e) =>
-                    setEditingJob({ ...editingJob, roleType: e.target.value as JobRoleType })
-                  }
-                  className="w-full px-3.5 py-2.5 bg-white border border-zinc-300 rounded-xl"
-                >
-                  <option value="motorista_caminhao">Motorista de Caminhão</option>
-                  <option value="motorista_fiorino">Motorista de Fiorino</option>
-                  <option value="operador_empilhadeira">Operador de Empilhadeira</option>
-                  <option value="auxiliar_logistica">Auxiliar de Logística</option>
-                  <option value="conferente_pacotes">Conferente de Pacotes</option>
-                  <option value="outro">Outro cargo operacional</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Salário mensal (número)
-                </label>
-                <input
-                  type="number"
-                  required
-                  value={editingJob.salaryMonthly}
-                  onChange={(e) => {
-                    const num = parseFloat(e.target.value || '0');
-                    setEditingJob({
-                      ...editingJob,
-                      salaryMonthly: num,
-                      salaryDisplay: `${num.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })} mensais`,
-                    });
-                  }}
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Texto de exibição do salário
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingJob.salaryDisplay}
-                  onChange={(e) =>
-                    setEditingJob({ ...editingJob, salaryDisplay: e.target.value })
-                  }
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingJob.salaryConfirmed}
-                    onChange={(e) =>
-                      setEditingJob({ ...editingJob, salaryConfirmed: e.target.checked })
-                    }
-                    className="w-4 h-4 accent-[#C8102E]"
-                  />
-                  Salário e piso da convenção coletiva conferidos e confirmados pelo RH
-                </label>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Escala / Jornada
-                </label>
-                <input
-                  type="text"
-                  value={editingJob.schedule}
-                  onChange={(e) => setEditingJob({ ...editingJob, schedule: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Resumo da vaga
-                </label>
-                <textarea
-                  rows={2}
-                  value={editingJob.summary}
-                  onChange={(e) => setEditingJob({ ...editingJob, summary: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Requisitos (um por linha)
-                </label>
-                <textarea
-                  rows={3}
-                  value={editingJob.requirements.join('\n')}
-                  onChange={(e) =>
-                    setEditingJob({
-                      ...editingJob,
-                      requirements: e.target.value.split('\n').filter((x) => x.trim()),
-                    })
-                  }
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Benefícios (um por linha)
-                </label>
-                <textarea
-                  rows={3}
-                  value={editingJob.benefits.join('\n')}
-                  onChange={(e) =>
-                    setEditingJob({
-                      ...editingJob,
-                      benefits: e.target.value.split('\n').filter((x) => x.trim()),
-                    })
-                  }
-                  className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                  Status de publicação
-                </label>
-                <select
-                  value={editingJob.status}
-                  onChange={(e) =>
-                    setEditingJob({ ...editingJob, status: e.target.value as JobStatus })
-                  }
-                  className="w-full px-3.5 py-2.5 bg-white border border-zinc-300 rounded-xl"
-                >
-                  <option value="active">Ativa (visível no portal)</option>
-                  <option value="inactive">Inativa (rascunho)</option>
-                  <option value="closed">Encerrada</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-zinc-200 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setEditingJob(null)}
-                className="px-5 py-2.5 text-sm font-semibold text-zinc-700 bg-zinc-100 rounded-xl cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer"
-              >
-                Salvar vaga
-              </button>
-            </div>
-          </form>
         </div>
       )}
     </div>

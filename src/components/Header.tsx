@@ -1,37 +1,28 @@
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
-
-export type AppRoute =
-  | '/'
-  | '/vagas'
-  | `/vagas/${string}`
-  | '/candidatura'
-  | '/confirmacao'
-  | '/privacidade'
-  | '/termos'
-  | '/contato'
-  | '/admin';
+import { buildChannelPath, ChannelPrefix } from '../lib/channelRouting.ts';
 
 interface HeaderProps {
-  currentPath: string;
+  currentRoute: string;
+  channelPrefix: ChannelPrefix | null;
   brandName: string;
-  onNavigate: (path: string) => void;
+  onNavigate: (targetRoute: string) => void;
 }
 
-export function Header({ currentPath, brandName, onNavigate }: HeaderProps) {
+export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const navItems = [
-    { label: 'Início', path: '/' },
-    { label: 'Vagas disponíveis', path: '/vagas' },
-    { label: 'Como funciona', path: '/#como-funciona' },
-    { label: 'Contato', path: '/contato' },
+    { label: 'Início', route: '/' },
+    { label: 'Vagas disponíveis', route: '/vagas' },
+    { label: 'Como funciona', route: '/#como-funciona' },
+    { label: 'Contato', route: '/contato' },
   ];
 
-  const handleLinkClick = (path: string) => {
+  const handleLinkClick = (route: string) => {
     setMobileOpen(false);
-    if (path === '/#como-funciona') {
-      if (currentPath !== '/') {
+    if (route === '/#como-funciona') {
+      if (currentRoute !== '/') {
         onNavigate('/');
         setTimeout(() => {
           document.getElementById('como-funciona')?.scrollIntoView({ behavior: 'smooth' });
@@ -41,15 +32,14 @@ export function Header({ currentPath, brandName, onNavigate }: HeaderProps) {
       }
       return;
     }
-    onNavigate(path);
+    onNavigate(route);
   };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-zinc-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-        {/* Zone 1: Single-line Brand Wordmark */}
         <a
-          href="/"
+          href={buildChannelPath(channelPrefix, '/')}
           onClick={(e) => {
             e.preventDefault();
             handleLinkClick('/');
@@ -62,23 +52,26 @@ export function Header({ currentPath, brandName, onNavigate }: HeaderProps) {
           <span className="font-display">{brandName}</span>
         </a>
 
-        {/* Zone 2: 4 concise single-line navigation links */}
         <nav
           aria-label="Navegação principal"
           className="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-600"
         >
           {navItems.map((item) => {
             const isActive =
-              item.path === '/'
-                ? currentPath === '/'
-                : item.path !== '/#como-funciona' && currentPath.startsWith(item.path);
+              item.route === '/'
+                ? currentRoute === '/'
+                : item.route !== '/#como-funciona' && currentRoute.startsWith(item.route);
+            const href =
+              item.route === '/#como-funciona'
+                ? `${buildChannelPath(channelPrefix, '/')}#como-funciona`
+                : buildChannelPath(channelPrefix, item.route);
             return (
               <a
-                key={item.path}
-                href={item.path}
+                key={item.route}
+                href={href}
                 onClick={(e) => {
                   e.preventDefault();
-                  handleLinkClick(item.path);
+                  handleLinkClick(item.route);
                 }}
                 className={`whitespace-nowrap shrink-0 py-1 transition-colors border-b-2 ${
                   isActive
@@ -92,7 +85,6 @@ export function Header({ currentPath, brandName, onNavigate }: HeaderProps) {
           })}
         </nav>
 
-        {/* Zone 3: 1 primary CTA + Mobile Toggle */}
         <div className="flex items-center gap-3 shrink-0">
           <button
             type="button"
@@ -113,22 +105,27 @@ export function Header({ currentPath, brandName, onNavigate }: HeaderProps) {
         </div>
       </div>
 
-      {/* Mobile Navigation Drawer */}
       {mobileOpen && (
         <div className="md:hidden border-t border-zinc-200 bg-white px-4 py-4 space-y-1">
-          {navItems.map((item) => (
-            <a
-              key={item.path}
-              href={item.path}
-              onClick={(e) => {
-                e.preventDefault();
-                handleLinkClick(item.path);
-              }}
-              className="block px-3 py-3 rounded-lg text-base font-medium text-zinc-800 hover:bg-zinc-100"
-            >
-              {item.label}
-            </a>
-          ))}
+          {navItems.map((item) => {
+            const href =
+              item.route === '/#como-funciona'
+                ? `${buildChannelPath(channelPrefix, '/')}#como-funciona`
+                : buildChannelPath(channelPrefix, item.route);
+            return (
+              <a
+                key={item.route}
+                href={href}
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleLinkClick(item.route);
+                }}
+                className="block px-3 py-3 rounded-lg text-base font-medium text-zinc-800 hover:bg-zinc-100"
+              >
+                {item.label}
+              </a>
+            );
+          })}
           <button
             type="button"
             onClick={() => handleLinkClick('/vagas')}

@@ -1,11 +1,13 @@
+import { buildChannelPath, ChannelPrefix } from '../lib/channelRouting.ts';
 import { CompanySettings } from '../types/recruitment.ts';
 
 interface FooterProps {
   settings: CompanySettings;
-  onNavigate: (path: string) => void;
+  channelPrefix: ChannelPrefix | null;
+  onNavigate: (targetRoute: string) => void;
 }
 
-export function Footer({ settings, onNavigate }: FooterProps) {
+export function Footer({ settings, channelPrefix, onNavigate }: FooterProps) {
   const year = new Date().getFullYear();
 
   return (
@@ -32,7 +34,7 @@ export function Footer({ settings, onNavigate }: FooterProps) {
             <ul className="space-y-2.5 text-sm">
               <li>
                 <a
-                  href="/vagas"
+                  href={buildChannelPath(channelPrefix, '/vagas')}
                   onClick={(e) => {
                     e.preventDefault();
                     onNavigate('/vagas');
@@ -44,7 +46,7 @@ export function Footer({ settings, onNavigate }: FooterProps) {
               </li>
               <li>
                 <a
-                  href="/privacidade"
+                  href={buildChannelPath(channelPrefix, '/privacidade')}
                   onClick={(e) => {
                     e.preventDefault();
                     onNavigate('/privacidade');
@@ -56,7 +58,7 @@ export function Footer({ settings, onNavigate }: FooterProps) {
               </li>
               <li>
                 <a
-                  href="/termos"
+                  href={buildChannelPath(channelPrefix, '/termos')}
                   onClick={(e) => {
                     e.preventDefault();
                     onNavigate('/termos');
@@ -68,7 +70,7 @@ export function Footer({ settings, onNavigate }: FooterProps) {
               </li>
               <li>
                 <a
-                  href="/contato"
+                  href={buildChannelPath(channelPrefix, '/contato')}
                   onClick={(e) => {
                     e.preventDefault();
                     onNavigate('/contato');

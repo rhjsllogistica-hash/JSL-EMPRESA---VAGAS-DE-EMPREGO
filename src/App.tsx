@@ -14,76 +14,84 @@ import {
 import { JobDetailsPage } from './components/JobDetailsPage.tsx';
 import { JobsListPage } from './components/JobsListPage.tsx';
 import { DEFAULT_COMPANY_SETTINGS, DEFAULT_JOBS } from './data/defaultJobs.ts';
-import { verifyFirestoreConnection } from './lib/firebase.ts';
-import { fetchCompanySettings, fetchPublicJobs } from './lib/recruitmentService.ts';
-import { CompanySettings, JobPosting } from './types/recruitment.ts';
+import { buildChannelPath, parseAppLocation } from './lib/channelRouting.ts';
+import { JobPosting } from './types/recruitment.ts';
+
+function resolveInitialJobFromUrl(): JobPosting | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get('vaga');
+    if (!slug) return null;
+    return DEFAULT_JOBS.find((j) => j.slug === slug || j.id === slug) || null;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
-  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname || '/');
-  const [jobs, setJobs] = useState<JobPosting[]>(DEFAULT_JOBS);
-  const [settings, setSettings] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
-  const [selectedJob, setSelectedJob] = useState<JobPosting | null>(null);
+  const [pathname, setPathname] = useState<string>(() => window.location.pathname || '/');
+  const [selectedJob, setSelectedJob] = useState<JobPosting | null>(resolveInitialJobFromUrl);
   const [receipt, setReceipt] = useState<ConfirmationReceipt | null>(null);
 
-  const loadPublicData = useCallback(async () => {
-    const [{ jobs: loadedJobs }, loadedSettings] = await Promise.all([
-      fetchPublicJobs(),
-      fetchCompanySettings(),
-    ]);
-    setJobs(loadedJobs);
-    setSettings(loadedSettings);
-  }, []);
+  const jobs = DEFAULT_JOBS;
+  const settings = DEFAULT_COMPANY_SETTINGS;
 
-  useEffect(() => {
-    verifyFirestoreConnection();
-    loadPublicData();
-  }, [loadPublicData]);
+  const parsed = parseAppLocation(pathname);
 
   useEffect(() => {
     const onPopState = () => {
-      setCurrentPath(window.location.pathname || '/');
+      setPathname(window.location.pathname || '/');
+      const fromUrl = resolveInitialJobFromUrl();
+      if (fromUrl) setSelectedJob(fromUrl);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const navigate = useCallback((path: string) => {
-    if (path !== window.location.pathname) {
-      window.history.pushState({}, '', path);
-    }
-    setCurrentPath(path);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  const navigateRoute = useCallback(
+    (targetRoute: string, queryString = '') => {
+      const targetFull = buildChannelPath(parsed.channelPrefix, targetRoute) + queryString;
+      const currentFull = window.location.pathname + window.location.search;
+      if (targetFull !== currentFull) {
+        window.history.pushState({}, '', targetFull);
+      }
+      setPathname(buildChannelPath(parsed.channelPrefix, targetRoute));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [parsed.channelPrefix]
+  );
 
   const handleSelectJobForApplication = useCallback(
     (job: JobPosting) => {
       setSelectedJob(job);
-      navigate('/candidatura');
+      navigateRoute('/candidatura', `?vaga=${encodeURIComponent(job.slug)}`);
     },
-    [navigate]
+    [navigateRoute]
   );
 
   const handleViewJobDetails = useCallback(
     (job: JobPosting) => {
-      navigate(`/vagas/${job.slug}`);
+      navigateRoute(`/vagas/${job.slug}`);
     },
-    [navigate]
+    [navigateRoute]
   );
 
   const renderPage = () => {
-    if (currentPath === '/' || currentPath === '') {
+    const route = parsed.route;
+
+    if (route === '/' || route === '') {
       return (
         <HomePage
           jobs={jobs}
           brandSubtitle={settings.brandSubtitle}
           onSelectJobForApplication={handleSelectJobForApplication}
           onViewJobDetails={handleViewJobDetails}
-          onNavigate={navigate}
+          onNavigate={navigateRoute}
         />
       );
     }
 
-    if (currentPath === '/vagas') {
+    if (route === '/vagas') {
       return (
         <JobsListPage
           jobs={jobs}
@@ -93,78 +101,82 @@ export default function App() {
       );
     }
 
-    if (currentPath.startsWith('/vagas/')) {
-      const slug = currentPath.replace('/vagas/', '').trim();
+    if (route.startsWith('/vagas/')) {
+      const slug = route.replace('/vagas/', '').trim();
       const job = jobs.find((j) => j.slug === slug || j.id === slug);
       if (!job) {
-        return <NotFoundPage onNavigate={navigate} />;
+        return <NotFoundPage onNavigate={navigateRoute} />;
       }
       return (
         <JobDetailsPage
           job={job}
           onSelectJobForApplication={handleSelectJobForApplication}
-          onBack={() => navigate('/vagas')}
+          onBack={() => navigateRoute('/vagas')}
         />
       );
     }
 
-    if (currentPath === '/candidatura') {
+    if (route === '/candidatura') {
       return (
         <ApplicationWizard
           selectedJob={selectedJob}
           availableJobs={jobs}
+          channelPrefix={parsed.channelPrefix}
           settings={settings}
-          onSelectJob={(job) => setSelectedJob(job)}
+          onSelectJob={(job) => {
+            setSelectedJob(job);
+            navigateRoute('/candidatura', `?vaga=${encodeURIComponent(job.slug)}`);
+          }}
           onSuccess={(conf) => {
             setReceipt(conf);
-            navigate('/confirmacao');
+            navigateRoute('/confirmacao');
           }}
-          onNavigate={navigate}
+          onNavigate={navigateRoute}
         />
       );
     }
 
-    if (currentPath === '/confirmacao') {
-      return <ConfirmationPage receipt={receipt} onNavigate={navigate} />;
+    if (route === '/confirmacao') {
+      return <ConfirmationPage receipt={receipt} onNavigate={navigateRoute} />;
     }
 
-    if (currentPath === '/privacidade') {
+    if (route === '/privacidade') {
       return <PrivacyPolicyPage settings={settings} />;
     }
 
-    if (currentPath === '/termos') {
+    if (route === '/termos') {
       return <TermsOfUsePage settings={settings} />;
     }
 
-    if (currentPath === '/contato') {
-      return <ContactPage settings={settings} />;
+    if (route === '/contato') {
+      return <ContactPage settings={settings} channelPrefix={parsed.channelPrefix} />;
     }
 
-    if (currentPath === '/admin') {
-      return (
-        <AdminDashboard
-          companySettings={settings}
-          onSettingsUpdated={(next) => setSettings(next)}
-          onJobsUpdated={loadPublicData}
-          onNavigate={navigate}
-        />
-      );
+    if (route === '/admin') {
+      return <AdminDashboard onNavigate={navigateRoute} />;
     }
 
-    return <NotFoundPage onNavigate={navigate} />;
+    return <NotFoundPage onNavigate={navigateRoute} />;
   };
 
-  const isAdminRoute = currentPath === '/admin';
+  const isAdminRoute = parsed.route === '/admin';
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 text-zinc-900">
       <Header
-        currentPath={currentPath}
+        currentRoute={parsed.route}
+        channelPrefix={parsed.channelPrefix}
         brandName={settings.brandName}
-        onNavigate={navigate}
+        onNavigate={navigateRoute}
       />
       <main className="flex-1">{renderPage()}</main>
-      {!isAdminRoute && <Footer settings={settings} onNavigate={navigate} />}
+      {!isAdminRoute && (
+        <Footer
+          settings={settings}
+          channelPrefix={parsed.channelPrefix}
+          onNavigate={navigateRoute}
+        />
+      )}
     </div>
   );
 }

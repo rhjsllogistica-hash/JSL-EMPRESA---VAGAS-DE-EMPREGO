@@ -11,7 +11,8 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { submitFullApplication } from '../lib/recruitmentService.ts';
+import { ChannelPrefix } from '../lib/channelRouting.ts';
+import { submitFullApplication, uploadAttachment } from '../lib/recruitmentService.ts';
 import {
   availabilitySchema,
   BR_STATES,
@@ -37,6 +38,7 @@ import { ConfirmationReceipt } from './ConfirmationPage.tsx';
 interface ApplicationWizardProps {
   selectedJob: JobPosting | null;
   availableJobs: JobPosting[];
+  channelPrefix: ChannelPrefix | null;
   settings: CompanySettings;
   onSelectJob: (job: JobPosting) => void;
   onSuccess: (receipt: ConfirmationReceipt) => void;
@@ -181,6 +183,7 @@ function OptionCards({
 export function ApplicationWizard({
   selectedJob,
   availableJobs,
+  channelPrefix,
   settings,
   onSelectJob,
   onSuccess,
@@ -190,12 +193,14 @@ export function ApplicationWizard({
   const [form, setForm] = useState<ApplicationFormState>(createInitialFormState);
   const [stepError, setStepError] = useState('');
   const [honeypot, setHoneypot] = useState('');
+  const [idempotencyKey] = useState(() => crypto.randomUUID().replace(/-/g, ''));
   const [uploading, setUploading] = useState(false);
   const [uploadCategory, setUploadCategory] = useState<UploadedAttachment['category']>('curriculo');
   const [uploadError, setUploadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const draftKey = selectedJob ? `jsl_draft_${selectedJob.id}` : null;
+  const draftKey =
+    selectedJob && channelPrefix ? `jsl_draft_${channelPrefix.slice(1)}_${selectedJob.id}` : null;
 
   useEffect(() => {
     if (!draftKey) return;
@@ -222,6 +227,35 @@ export function ApplicationWizard({
       // ignora erro de quota
     }
   }, [draftKey, form]);
+
+  if (!channelPrefix) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
+        <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10 space-y-4">
+          <p className="text-xs font-semibold text-[#C8102E]">CANAL DE INSCRIÇÃO NÃO IDENTIFICADO</p>
+          <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950">
+            Acesse pelo link oficial da campanha para se candidatar
+          </h1>
+          <p className="text-sm text-zinc-600 leading-relaxed">
+            Para garantir o encaminhamento correto da sua ficha ao recrutador responsável, utilize
+            exatamente o endereço recebido no anúncio ou mensagem (por exemplo,{' '}
+            <code className="font-mono-tabular bg-zinc-100 px-1.5 py-0.5 rounded">/vagas1</code> ou{' '}
+            <code className="font-mono-tabular bg-zinc-100 px-1.5 py-0.5 rounded">/vagas2</code>).
+            Nenhuma candidatura é enviada sem canal explícito.
+          </p>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => onNavigate('/vagas')}
+              className="px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
+            >
+              Voltar para o catálogo de vagas
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!selectedJob) {
     return (
@@ -393,7 +427,7 @@ export function ApplicationWizard({
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
+    if (!file || !channelPrefix) return;
 
     setUploadError('');
     if (file.size > 5 * 1024 * 1024) {
@@ -407,31 +441,7 @@ export function ApplicationWizard({
 
     setUploading(true);
     try {
-      const body = new FormData();
-      body.append('file', file);
-      body.append('category', uploadCategory);
-
-      const res = await fetch('/api/uploads', {
-        method: 'POST',
-        body,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Falha ao enviar arquivo.');
-      }
-
-      const uploaded: UploadedAttachment = {
-        id: crypto.randomUUID(),
-        fileId: data.fileId,
-        originalName: data.originalName,
-        mimeType: data.mimeType,
-        sizeBytes: data.sizeBytes,
-        category: data.category,
-        sha256: data.sha256,
-        uploadedAt: data.uploadedAt,
-      };
-
+      const uploaded = await uploadAttachment(file, uploadCategory, channelPrefix);
       setForm((prev) => ({
         ...prev,
         attachments: [...prev.attachments, uploaded],
@@ -449,6 +459,10 @@ export function ApplicationWizard({
       setStepError(err);
       return;
     }
+    if (!channelPrefix) {
+      setStepError('Canal de inscrição não identificado.');
+      return;
+    }
 
     setStepError('');
     setSubmitting(true);
@@ -458,6 +472,8 @@ export function ApplicationWizard({
       const receipt = await submitFullApplication(
         selectedJob,
         { ...form, experiences: cleanExperiences },
+        channelPrefix,
+        idempotencyKey,
         honeypot
       );
 

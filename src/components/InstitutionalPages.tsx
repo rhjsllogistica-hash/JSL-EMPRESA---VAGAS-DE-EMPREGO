@@ -145,7 +145,13 @@ export function TermsOfUsePage({ settings }: { settings: CompanySettings }) {
   );
 }
 
-export function ContactPage({ settings }: { settings: CompanySettings }) {
+export function ContactPage({
+  settings,
+  channelPrefix = null,
+}: {
+  settings: CompanySettings;
+  channelPrefix?: '/vagas1' | '/vagas2' | null;
+}) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -167,15 +173,19 @@ export function ContactPage({ settings }: { settings: CompanySettings }) {
 
     setSubmitting(true);
     try {
-      await submitContactMessage(parsed.data);
+      await submitContactMessage(parsed.data, channelPrefix);
       setSent(true);
       setName('');
       setEmail('');
       setPhone('');
       setSubject('');
       setMessage('');
-    } catch {
-      setError('Não foi possível enviar sua mensagem agora. Tente novamente em instantes.');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível enviar sua mensagem agora. Tente novamente em instantes.'
+      );
     } finally {
       setSubmitting(false);
     }
