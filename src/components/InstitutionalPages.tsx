@@ -61,7 +61,8 @@ export function PrivacyPolicyPage({ settings }: { settings: CompanySettings }) {
           </h2>
           <p>
             As candidaturas e arquivos enviados são armazenados em ambiente privado com controle de
-            acesso restrito à equipe de Recursos Humanos autorizada. Não comercializamos dados de
+            acesso restrito à equipe de Recursos Humanos autorizada, incluindo registro técnico do
+            endereço IP de envio para segurança e prevenção a fraudes. Não comercializamos dados de
             candidatos nem utilizamos rastreadores de anúncios que enviem dados pessoais sensíveis.
           </p>
         </section>

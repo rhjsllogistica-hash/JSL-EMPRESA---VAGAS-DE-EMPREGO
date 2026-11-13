@@ -86,6 +86,8 @@ function getClientIp(request: Request): string {
   if (cfIp) return cfIp.trim();
   const xff = request.headers.get('x-forwarded-for');
   if (xff) return xff.split(',')[0].trim();
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
   return 'local-client';
 }
 
@@ -879,6 +881,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
 
     const payloadJson = JSON.stringify({
       entrySource,
+      submittedIp: ip,
       personal: data.personal,
       education: data.education,
       professionalSummary: data.professionalSummary,
@@ -1174,14 +1177,21 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
         items: (rowsRes.results || []).map((r) => {
           let rowEntrySource: 'vagas1' | 'vagas2' | 'site_principal' =
             r.channel_path === '/vagas1' ? 'vagas1' : 'vagas2';
+          let rowSubmittedIp = '';
           try {
-            const p = JSON.parse(r.payload_json) as { entrySource?: string };
+            const p = JSON.parse(r.payload_json) as {
+              entrySource?: string;
+              submittedIp?: string;
+            };
             if (
               p?.entrySource === 'site_principal' ||
               p?.entrySource === 'vagas1' ||
               p?.entrySource === 'vagas2'
             ) {
               rowEntrySource = p.entrySource;
+            }
+            if (typeof p?.submittedIp === 'string') {
+              rowSubmittedIp = p.submittedIp;
             }
           } catch {
             // fallback channel_path
@@ -1200,6 +1210,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
             candidateCity: r.candidate_city,
             candidateState: r.candidate_state,
             entrySource: rowEntrySource,
+            submittedIp: rowSubmittedIp,
             createdAt: r.created_at,
             updatedAt: r.updated_at,
           };
@@ -1263,6 +1274,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       const headers = [
         'Protocolo',
         'Origem',
+        'IP de Envio',
         'Candidato',
         'E-mail',
         'Telefone',
@@ -1283,6 +1295,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       for (const r of res.results || []) {
         let payload: {
           entrySource?: string;
+          submittedIp?: string;
           education?: { educationLevel?: string };
           availability?: {
             travelAvailability?: string;
@@ -1307,6 +1320,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           [
             r.protocol,
             originLabel,
+            payload.submittedIp || '',
             r.candidate_name,
             r.candidate_email,
             r.candidate_phone,
@@ -1439,6 +1453,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           protocol: appRow.protocol,
           channelPath: appRow.channel_path,
           entrySource: appRow.channel_path === '/vagas1' ? 'vagas1' : 'vagas2',
+          submittedIp: '',
           jobId: appRow.job_id,
           jobTitle: appRow.job_title,
           jobRoleType: appRow.job_role_type,

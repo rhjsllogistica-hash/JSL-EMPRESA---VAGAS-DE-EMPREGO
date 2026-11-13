@@ -846,7 +846,12 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           {item.candidateCity}/{item.candidateState}
                         </td>
                         <td className="py-3.5 px-4 text-xs text-zinc-600 tabular-nums whitespace-nowrap">
-                          {formatDateTimeSaoPaulo(item.createdAt)}
+                          <p>{formatDateTimeSaoPaulo(item.createdAt)}</p>
+                          {item.submittedIp && (
+                            <p className="font-mono-tabular text-[11px] text-zinc-500 mt-0.5">
+                              IP: {item.submittedIp}
+                            </p>
+                          )}
                         </td>
                         <td className={`py-3.5 px-4 text-xs font-bold ${getStatusTextClass(item.status)}`}>
                           {item.status}
@@ -1103,6 +1108,12 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       <p>
                         <strong>Recebido em:</strong>{' '}
                         {formatDateTimeSaoPaulo(detailData.application.createdAt)}
+                      </p>
+                      <p>
+                        <strong>IP do envio:</strong>{' '}
+                        <span className="font-mono-tabular">
+                          {detailData.application.submittedIp || 'Não registrado'}
+                        </span>
                       </p>
                       <p>
                         <strong>E-mail:</strong> {detailData.application.personal.email}

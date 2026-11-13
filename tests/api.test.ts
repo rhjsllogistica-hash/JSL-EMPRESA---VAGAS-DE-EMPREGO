@@ -1319,6 +1319,101 @@ test('Main site submissions (entrySource=site_principal) go exclusively to tenan
   assert.ok(csv2Text.includes('Site principal'));
 });
 
+test('Application submission captures client IP and exposes it in list, detail, and CSV only for owning tenant', async () => {
+  const db = await setupTestDb();
+
+  const submitRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas1',
+        'CF-Connecting-IP': '203.0.113.88',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas1',
+          personal: {
+            ...buildValidApplicationPayload().personal,
+            fullName: 'Candidato IP Teste',
+          },
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(submitRes.status, 201);
+  const created = (await submitRes.json()) as { applicationId: string };
+
+  const submitResXff = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas2',
+        'X-Forwarded-For': '198.51.100.77, 10.0.0.1',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas2',
+          personal: {
+            ...buildValidApplicationPayload().personal,
+            fullName: 'Candidato IP XFF',
+          },
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(submitResXff.status, 201);
+
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.245');
+  const cookie2 = await loginAs(db, 'recruiter2', 'test_pass_tenant2', '198.51.100.246');
+
+  const list1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications`, { headers: { Cookie: cookie1 } }),
+    { DB: db }
+  );
+  const list1Data = (await list1.json()) as {
+    items: Array<{ id: string; submittedIp: string }>;
+  };
+  assert.equal(list1Data.items.length, 1);
+  assert.equal(list1Data.items[0].id, created.applicationId);
+  assert.equal(list1Data.items[0].submittedIp, '203.0.113.88');
+
+  const detail1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${created.applicationId}`, {
+      headers: { Cookie: cookie1 },
+    }),
+    { DB: db }
+  );
+  const detail1Data = (await detail1.json()) as {
+    application: { submittedIp: string };
+  };
+  assert.equal(detail1Data.application.submittedIp, '203.0.113.88');
+
+  const csv1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/export?scope=filtered`, { headers: { Cookie: cookie1 } }),
+    { DB: db }
+  );
+  const csv1Text = await csv1.text();
+  assert.ok(csv1Text.includes('IP de Envio'));
+  assert.ok(csv1Text.includes('203.0.113.88'));
+  assert.ok(!csv1Text.includes('198.51.100.77'));
+
+  const list2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications`, { headers: { Cookie: cookie2 } }),
+    { DB: db }
+  );
+  const list2Data = (await list2.json()) as {
+    items: Array<{ submittedIp: string }>;
+  };
+  assert.equal(list2Data.items.length, 1);
+  assert.equal(list2Data.items[0].submittedIp, '198.51.100.77');
+});
+
 
 
 

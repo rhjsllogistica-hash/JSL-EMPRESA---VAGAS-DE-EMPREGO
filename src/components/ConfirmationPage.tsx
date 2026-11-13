@@ -47,10 +47,10 @@ export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps)
         </div>
 
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
-          CANDIDATURA ENVIADA COM SUCESSO!
+          ENVIADO COM SUCESSO!
         </h1>
-        <p className="mt-2 text-base text-zinc-600">
-          Recebemos suas informações para análise do processo seletivo.
+        <p className="mt-2 text-base font-medium text-zinc-700">
+          Aguarde o processo seletivo. Caso seja aprovado na 1ª etapa, o RH irá entrar em contato para entrevista.
         </p>
 
         <div className="mt-8 bg-zinc-50 border border-zinc-200 rounded-xl p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -62,7 +62,7 @@ export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps)
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-500">Status inicial</p>
-            <p className="mt-1 text-base font-bold text-zinc-900">Candidatura recebida</p>
+            <p className="mt-1 text-base font-bold text-zinc-900">Enviado — Aguardando 1ª etapa</p>
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-500">Nome do candidato</p>
@@ -78,9 +78,8 @@ export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps)
           </div>
         </div>
 
-        <p className="mt-6 text-sm text-zinc-600 leading-relaxed bg-zinc-50 border border-zinc-200 rounded-xl p-4">
-          A inscrição não garante contratação. Caso sua candidatura avance, a equipe responsável
-          poderá entrar em contato por um dos canais informados.
+        <p className="mt-6 text-sm text-zinc-700 leading-relaxed bg-emerald-50/70 border border-emerald-200 rounded-xl p-4">
+          Sua candidatura foi enviada e registrada com segurança. Aguarde o processo seletivo: caso seja aprovado na 1ª etapa, a equipe de RH entrará em contato pelos canais informados para agendar sua entrevista.
         </p>
 
         <div className="mt-8 flex flex-col sm:flex-row gap-3">

@@ -30,6 +30,7 @@ export interface AdminApplicationListItem {
   candidateCity: string;
   candidateState: string;
   entrySource: EntrySource;
+  submittedIp?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +55,7 @@ export interface AdminApplicationDetailResponse {
     protocol: string;
     channelPath: '/vagas1' | '/vagas2';
     entrySource?: EntrySource;
+    submittedIp?: string;
     jobId: string;
     jobTitle: string;
     jobRoleType: string;
