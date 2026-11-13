@@ -26,7 +26,7 @@ Após aplicar `migrations/0001_recruitment.sql`, execute no console SQL do D1 (`
 ## 4. Rotas em Produção
 - Canal 1 (Tenant 1): `/vagas1`, `/vagas1/vagas`, `/vagas1/vagas/<slug>`, `/vagas1/candidatura`, `/vagas1/confirmacao`
 - Canal 2 (Tenant 2): `/vagas2`, `/vagas2/vagas`, `/vagas2/vagas/<slug>`, `/vagas2/candidatura`, `/vagas2/confirmacao`
-- Painel Administrativo: `/admin`
+- Painel Administrativo: `/painel`
 - API Pages Functions: `/api/*` (`functions/api/[[path]].ts`)
 
 > O arquivo `server.ts` é utilizado apenas como adaptador de desenvolvimento local com SQLite (`node:sqlite`), simulando o D1 em `.dev-data/local.sqlite`. Em produção no Cloudflare Pages, apenas `dist/` e `functions/` são servidos.

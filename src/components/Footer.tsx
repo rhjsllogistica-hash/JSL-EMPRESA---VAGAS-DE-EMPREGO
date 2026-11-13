@@ -84,28 +84,19 @@ export function Footer({ settings, channelPrefix, onNavigate }: FooterProps) {
           </div>
 
           <div className="space-y-2.5 text-sm">
-            <h3 className="text-sm font-semibold text-white mb-4">Controladora e Acesso Restrito</h3>
+            <h3 className="text-sm font-semibold text-white mb-4">Controladora</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
               <strong className="text-zinc-200">Controladora:</strong> {settings.legalName}
             </p>
             <p className="text-xs text-zinc-400">
               <strong className="text-zinc-200">CNPJ:</strong> {settings.cnpj}
             </p>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              <strong className="text-zinc-200">Endereço da Matriz:</strong> {settings.address}
+            </p>
             <p className="text-xs text-zinc-400">
               <strong className="text-zinc-200">E-mail:</strong> {settings.institutionalEmail}
             </p>
-            <div className="pt-2">
-              <a
-                href="/admin"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onNavigate('/admin');
-                }}
-                className="inline-flex items-center text-xs font-medium text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-2 transition-colors"
-              >
-                Painel Administrativo (RH)
-              </a>
-            </div>
           </div>
         </div>
 

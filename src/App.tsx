@@ -152,14 +152,14 @@ export default function App() {
       return <ContactPage settings={settings} channelPrefix={parsed.channelPrefix} />;
     }
 
-    if (route === '/admin') {
+    if (route === '/painel') {
       return <AdminDashboard onNavigate={navigateRoute} />;
     }
 
     return <NotFoundPage onNavigate={navigateRoute} />;
   };
 
-  const isAdminRoute = parsed.route === '/admin';
+  const isAdminRoute = parsed.route === '/painel';
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 text-zinc-900">

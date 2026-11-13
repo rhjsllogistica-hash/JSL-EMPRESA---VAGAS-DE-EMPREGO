@@ -39,8 +39,8 @@ export function buildChannelPath(
   targetRoute: string
 ): string {
   const normalized = targetRoute.startsWith('/') ? targetRoute : `/${targetRoute}`;
-  if (normalized === '/admin' || normalized.startsWith('/admin/')) {
-    return '/admin';
+  if (normalized === '/painel' || normalized.startsWith('/painel/')) {
+    return '/painel';
   }
   if (!channelPrefix) {
     return normalized;
