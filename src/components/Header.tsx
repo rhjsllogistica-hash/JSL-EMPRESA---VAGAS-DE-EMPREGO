@@ -49,7 +49,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
           <span className="inline-flex w-7 h-7 rounded bg-[#C8102E] items-center justify-center text-white text-xs font-bold tracking-tighter">
             JSL
           </span>
-          <span className="font-display">{brandName}</span>
+          <span className="font-display">JSL - LOGÍSTICA</span>
         </a>
 
         <nav
