@@ -1,0 +1,233 @@
+{
+  "entities": {
+    "Job": {
+      "title": "Job",
+      "description": "Vaga de emprego publicada ou gerenciada pelo RH no portal JSL Empresa.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slug": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "roleType": {
+          "type": "string",
+          "enum": ["motorista_caminhao", "motorista_fiorino", "operador_empilhadeira", "auxiliar_logistica", "conferente_pacotes", "outro"]
+        },
+        "department": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 120 },
+        "salaryMonthly": { "type": "number" },
+        "salaryDisplay": { "type": "string", "maxLength": 80 },
+        "salaryConfirmed": { "type": "boolean" },
+        "collectiveAgreementNote": { "type": "string", "maxLength": 400 },
+        "schedule": { "type": "string", "maxLength": 200 },
+        "contractType": { "type": "string", "maxLength": 120 },
+        "experienceRequired": { "type": "boolean" },
+        "experienceNote": { "type": "string", "maxLength": 240 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "requirements": { "type": "array" },
+        "conditions": { "type": "array" },
+        "activities": { "type": "array" },
+        "benefits": { "type": "array" },
+        "imageUrl": { "type": "string", "maxLength": 300 },
+        "status": { "type": "string", "enum": ["active", "inactive", "closed"] },
+        "sortOrder": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "roleType", "salaryMonthly", "salaryDisplay", "status"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Candidatura enviada por candidato para uma vaga específica.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "protocol": { "type": "string", "maxLength": 40 },
+        "jobId": { "type": "string", "maxLength": 128 },
+        "jobTitle": { "type": "string", "maxLength": 160 },
+        "jobRoleType": { "type": "string", "maxLength": 64 },
+        "jobSalaryDisplay": { "type": "string", "maxLength": 80 },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Recebida",
+            "Em análise",
+            "Contato realizado",
+            "Entrevista agendada",
+            "Entrevista concluída",
+            "Aguardando documentação",
+            "Processo finalizado"
+          ]
+        },
+        "personal": { "type": "object" },
+        "education": { "type": "object" },
+        "professionalSummary": { "type": "object" },
+        "availability": { "type": "object" },
+        "roleSpecific": { "type": "object" },
+        "safetyAndAccessibility": { "type": "object" },
+        "lgpdConsent": { "type": "boolean" },
+        "talentPoolConsent": { "type": "boolean" },
+        "experienceCount": { "type": "number" },
+        "attachmentCount": { "type": "number" },
+        "internalNotes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["protocol", "jobId", "jobTitle", "status", "personal", "education", "availability", "lgpdConsent", "createdAt"]
+    },
+    "WorkExperience": {
+      "title": "WorkExperience",
+      "description": "Registro de experiência profissional anterior ou atual vinculada à candidatura.",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "maxLength": 160 },
+        "role": { "type": "string", "maxLength": 140 },
+        "area": { "type": "string", "maxLength": 120 },
+        "startDate": { "type": "string", "maxLength": 20 },
+        "endDate": { "type": "string", "maxLength": 20 },
+        "isCurrent": { "type": "boolean" },
+        "signedCard": { "type": "boolean" },
+        "lastSalary": { "type": "string", "maxLength": 60 },
+        "benefits": { "type": "string", "maxLength": 300 },
+        "dailyActivities": { "type": "string", "maxLength": 1000 },
+        "responsibilities": { "type": "string", "maxLength": 1000 },
+        "equipmentUsed": { "type": "string", "maxLength": 400 },
+        "leaveReason": { "type": "string", "maxLength": 400 },
+        "notes": { "type": "string", "maxLength": 600 },
+        "calculatedYears": { "type": "number" },
+        "calculatedMonths": { "type": "number" },
+        "durationLabel": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "role", "startDate", "isCurrent", "createdAt"]
+    },
+    "AttachmentMeta": {
+      "title": "AttachmentMeta",
+      "description": "Metadados de currículo ou certificado armazenado de forma privada no servidor.",
+      "type": "object",
+      "properties": {
+        "fileId": { "type": "string", "maxLength": 128 },
+        "originalName": { "type": "string", "maxLength": 255 },
+        "mimeType": { "type": "string", "maxLength": 120 },
+        "sizeBytes": { "type": "number" },
+        "category": { "type": "string", "enum": ["curriculo", "certificado", "curso", "qualificacao"] },
+        "sha256": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fileId", "originalName", "mimeType", "sizeBytes", "category", "createdAt"]
+    },
+    "StatusHistory": {
+      "title": "StatusHistory",
+      "description": "Histórico de alteração de status da candidatura pelo RH.",
+      "type": "object",
+      "properties": {
+        "fromStatus": { "type": "string", "maxLength": 80 },
+        "toStatus": { "type": "string", "maxLength": 80 },
+        "comment": { "type": "string", "maxLength": 1000 },
+        "changedByEmail": { "type": "string", "maxLength": 160 },
+        "changedByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["toStatus", "changedByEmail", "changedByUid", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Log de auditoria de ações administrativas e LGPD.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "maxLength": 100 },
+        "targetType": { "type": "string", "maxLength": 80 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 800 },
+        "actorEmail": { "type": "string", "maxLength": 160 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "targetType", "actorEmail", "actorUid", "createdAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Usuário administrativo autorizado a acessar o painel /admin.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 160 },
+        "name": { "type": "string", "maxLength": 140 },
+        "role": { "type": "string", "enum": ["super_admin", "recruiter"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "active"]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Dados institucionais e de privacidade configuráveis da empresa controladora.",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string", "maxLength": 100 },
+        "brandSubtitle": { "type": "string", "maxLength": 140 },
+        "legalName": { "type": "string", "maxLength": 200 },
+        "cnpj": { "type": "string", "maxLength": 40 },
+        "address": { "type": "string", "maxLength": 300 },
+        "institutionalEmail": { "type": "string", "maxLength": 160 },
+        "institutionalPhone": { "type": "string", "maxLength": 60 },
+        "dpoName": { "type": "string", "maxLength": 140 },
+        "dpoEmail": { "type": "string", "maxLength": 160 },
+        "retentionDays": { "type": "number" },
+        "brandDisclaimer": { "type": "string", "maxLength": 600 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandName", "legalName", "institutionalEmail", "retentionDays"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Mensagem enviada pelo formulário público de contato.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 140 },
+        "email": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "subject": { "type": "string", "maxLength": 160 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "subject", "message", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/Job" },
+      "description": "Catálogo de vagas de emprego editáveis pelo RH."
+    },
+    "/applications/{applicationId}": {
+      "schema": { "$ref": "#/entities/Application" },
+      "description": "Candidaturas submetidas ao processo seletivo."
+    },
+    "/applications/{applicationId}/experiences/{expId}": {
+      "schema": { "$ref": "#/entities/WorkExperience" },
+      "description": "Experiências profissionais vinculadas a uma candidatura."
+    },
+    "/applications/{applicationId}/attachments/{attId}": {
+      "schema": { "$ref": "#/entities/AttachmentMeta" },
+      "description": "Anexos vinculados a uma candidatura."
+    },
+    "/applications/{applicationId}/statusHistory/{historyId}": {
+      "schema": { "$ref": "#/entities/StatusHistory" },
+      "description": "Histórico de movimentação de status pelo RH."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Registro de auditoria de ações administrativas."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Administradores autorizados no painel."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/CompanySettings" },
+      "description": "Configurações institucionais e LGPD do portal."
+    },
+    "/contactMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Mensagens recebidas pela página de contato."
+    }
+  }
+}

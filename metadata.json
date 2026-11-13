@@ -1,0 +1,8 @@
+{
+  "name": "JSL Empresa — Portal de Carreiras e Processo Seletivo",
+  "description": "Portal oficial de recrutamento, seleção de vagas operacionais e gestão de candidaturas em transporte e logística.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
