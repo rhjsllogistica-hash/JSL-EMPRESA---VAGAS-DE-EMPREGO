@@ -1414,6 +1414,103 @@ test('Application submission captures client IP and exposes it in list, detail, 
   assert.equal(list2Data.items[0].submittedIp, '198.51.100.77');
 });
 
+test('Submission succeeds without attachments, with hasWorkedBefore=Sim without company details, and persists gender + children', async () => {
+  const db = await setupTestDb();
+
+  const submitRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas1',
+        'CF-Connecting-IP': '203.0.113.99',
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas1',
+          personal: {
+            ...buildValidApplicationPayload().personal,
+            fullName: 'Maria Clara Teste',
+            gender: 'Mulher',
+            hasChildren: 'Sim',
+            childrenCount: '2',
+          },
+          professionalSummary: {
+            hasWorkedBefore: 'Sim',
+            currentlyEmployed: '',
+            totalLogisticsExperience: '',
+            salaryExpectation: '',
+            startAvailability: 'Imediata',
+          },
+          experiences: [
+            {
+              id: 'blank_exp_1',
+              companyName: '',
+              role: '',
+              area: '',
+              startDate: '',
+              endDate: '',
+              isCurrent: false,
+              signedCard: '',
+              lastSalary: '',
+              benefits: '',
+              dailyActivities: '',
+              responsibilities: '',
+              equipmentUsed: '',
+              leaveReason: '',
+              notes: '',
+              calculatedYears: 0,
+              calculatedMonths: 0,
+              durationLabel: '',
+            },
+          ],
+          attachments: [],
+          identityDocumentIds: [],
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(submitRes.status, 201);
+  const created = (await submitRes.json()) as { applicationId: string };
+
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.250');
+
+  const detailRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${created.applicationId}`, {
+      headers: { Cookie: cookie1 },
+    }),
+    { DB: db }
+  );
+  assert.equal(detailRes.status, 200);
+  const detailData = (await detailRes.json()) as {
+    application: {
+      personal: { gender?: string; hasChildren?: string; childrenCount?: string };
+      professionalSummary: { hasWorkedBefore: string };
+    };
+    experiences: unknown[];
+    attachments: unknown[];
+  };
+
+  assert.equal(detailData.application.personal.gender, 'Mulher');
+  assert.equal(detailData.application.personal.hasChildren, 'Sim');
+  assert.equal(detailData.application.personal.childrenCount, '2');
+  assert.equal(detailData.application.professionalSummary.hasWorkedBefore, 'Sim');
+  assert.equal(detailData.experiences.length, 0);
+  assert.equal(detailData.attachments.length, 0);
+
+  const csvRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/export?scope=filtered`, { headers: { Cookie: cookie1 } }),
+    { DB: db }
+  );
+  const csvText = await csvRes.text();
+  assert.ok(csvText.includes('Sexo'));
+  assert.ok(csvText.includes('Filhos'));
+  assert.ok(csvText.includes('Mulher'));
+  assert.ok(csvText.includes('Sim (2)'));
+});
+
 
 
 

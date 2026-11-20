@@ -37,9 +37,9 @@ export function HomePage({
     <div>
       {/* Hero Section */}
       <section className="bg-white border-b border-zinc-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
-            <div className="lg:col-span-6 flex flex-col justify-center space-y-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-stretch">
+            <div className="order-2 lg:order-1 lg:col-span-6 flex flex-col justify-center space-y-6">
               <p className="text-xs sm:text-sm font-bold tracking-wide text-[#C8102E]">
                 JSL - LOGÍSTICA · {brandSubtitle}
               </p>
@@ -89,7 +89,7 @@ export function HomePage({
               </div>
             </div>
 
-            <div className="lg:col-span-6 flex items-center">
+            <div className="order-1 lg:order-2 lg:col-span-6 flex items-center">
               <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden border border-zinc-200 shadow-lg bg-zinc-900">
                 <ImageWithFallback
                   src={HERO_IMAGE_PATH}
@@ -343,8 +343,8 @@ export function HomePage({
                 Histórico e currículo em etapas
               </h3>
               <p className="text-sm text-zinc-600 leading-relaxed">
-                Informe contatos, escolaridade, experiências anteriores com cálculo automático de
-                tempo de casa, disponibilidade e anexe seu currículo.
+                Informe contatos, escolaridade, disponibilidade e, caso deseje, anexe seu currículo
+                ou documento de forma opcional.
               </p>
             </div>
 
@@ -386,8 +386,8 @@ export function HomePage({
                 </h3>
                 <p className="mt-1 text-sm text-zinc-600 max-w-2xl leading-relaxed">
                   Nunca cobramos taxas de inscrição, exames prévios pagos por Pix ou depósitos
-                  bancários. Os dados e o documento com foto são utilizados exclusivamente para
-                  confirmação de identidade e verificação de antecedentes.
+                  bancários. Os dados preenchidos e eventuais documentos enviados são utilizados
+                  exclusivamente para análise do processo seletivo conforme a LGPD.
                 </p>
               </div>
             </div>

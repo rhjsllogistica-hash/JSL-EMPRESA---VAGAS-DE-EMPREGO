@@ -55,6 +55,9 @@ export interface JobPosting {
 
 export interface PersonalContactData {
   fullName: string;
+  gender?: 'Homem' | 'Mulher' | '';
+  hasChildren?: 'Sim' | 'Não' | '';
+  childrenCount?: string;
   email: string;
   phone: string;
   whatsapp: string;

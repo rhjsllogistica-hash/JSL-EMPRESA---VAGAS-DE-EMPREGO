@@ -25,7 +25,6 @@ import {
   formatCepBR,
   formatPhoneBR,
   personalSchema,
-  workExperienceSchema,
 } from '../lib/validation.ts';
 import {
   ApplicationFormState,
@@ -50,7 +49,7 @@ interface ApplicationWizardProps {
 const STEP_TITLES = [
   'Seus Dados e Endereço',
   'Experiência e Vaga',
-  'Documento com Foto e Anexos',
+  'Documentos e Anexos (Opcional)',
   'Revisar e Enviar',
 ];
 
@@ -81,6 +80,9 @@ function createInitialFormState(): ApplicationFormState {
   return {
     personal: {
       fullName: '',
+      gender: '',
+      hasChildren: '',
+      childrenCount: '',
       email: '',
       phone: '',
       whatsapp: '',
@@ -349,6 +351,18 @@ export function ApplicationWizard({
     if (step === 0) {
       const parsed = personalSchema.safeParse(form.personal);
       if (!parsed.success) return parsed.error.issues[0]?.message || 'Verifique seus dados pessoais.';
+      if (!form.personal.gender) {
+        return 'Selecione se você é Homem ou Mulher.';
+      }
+      if (!form.personal.hasChildren) {
+        return 'Informe se você tem filhos (Sim ou Não).';
+      }
+      if (form.personal.hasChildren === 'Sim') {
+        const countNum = parseInt(form.personal.childrenCount || '', 10);
+        if (!Number.isFinite(countNum) || countNum < 1 || countNum > 20) {
+          return 'Informe quantos filhos você tem (número de 1 a 20).';
+        }
+      }
       if (!form.personal.cep || form.personal.cep.replace(/\D/g, '').length !== 8) {
         return 'Informe seu CEP completo (8 dígitos) para localizarmos seu endereço.';
       }
@@ -366,23 +380,13 @@ export function ApplicationWizard({
         return 'Informe se já trabalhou antes ou se é seu primeiro emprego.';
       }
       if (form.professionalSummary.hasWorkedBefore === 'Sim') {
-        if (form.experiences.length === 0) {
-          return 'Informe ao menos uma experiência profissional.';
-        }
         for (let i = 0; i < form.experiences.length; i++) {
           const exp = form.experiences[i];
-          const duration = calculateWorkDuration(exp.startDate, exp.endDate, exp.isCurrent);
-          if (!duration.valid) {
-            return `Experiência ${i + 1}: ${duration.label}`;
-          }
-          const parsed = workExperienceSchema.safeParse({
-            ...exp,
-            calculatedYears: duration.years,
-            calculatedMonths: duration.months,
-            durationLabel: duration.label,
-          });
-          if (!parsed.success) {
-            return `Experiência ${i + 1}: ${parsed.error.issues[0]?.message}`;
+          if (exp.startDate.trim() && !exp.isCurrent && exp.endDate.trim()) {
+            const duration = calculateWorkDuration(exp.startDate, exp.endDate, exp.isCurrent);
+            if (!duration.valid) {
+              return `Experiência ${i + 1}: ${duration.label}`;
+            }
           }
         }
       }
@@ -421,8 +425,8 @@ export function ApplicationWizard({
     }
 
     if (step === 2) {
-      if (identityAttachments.length === 0) {
-        return 'Envie uma foto ou PDF do seu documento com foto aberto (frente e verso) para continuar.';
+      if (uploadingIdDoc || uploadingExtra) {
+        return 'Aguarde o término do envio do arquivo para continuar.';
       }
       return '';
     }
@@ -556,7 +560,16 @@ export function ApplicationWizard({
     setSubmitting(true);
     try {
       const cleanExperiences =
-        form.professionalSummary.hasWorkedBefore === 'Sim' ? form.experiences : [];
+        form.professionalSummary.hasWorkedBefore === 'Sim'
+          ? form.experiences.filter(
+              (exp) =>
+                exp.companyName.trim() !== '' ||
+                exp.role.trim() !== '' ||
+                exp.startDate.trim() !== '' ||
+                exp.endDate.trim() !== '' ||
+                exp.isCurrent
+            )
+          : [];
       const payloadToSend: ApplicationFormState = {
         ...form,
         experiences: cleanExperiences,
@@ -744,6 +757,64 @@ export function ApplicationWizard({
                   className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                 />
               </div>
+
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <OptionCards
+                  label="Você é:"
+                  required
+                  value={form.personal.gender || ''}
+                  options={['Homem', 'Mulher']}
+                  onChange={(val) =>
+                    setForm((p) => ({
+                      ...p,
+                      personal: { ...p.personal, gender: val as 'Homem' | 'Mulher' },
+                    }))
+                  }
+                />
+
+                <OptionCards
+                  label="Tem filhos?"
+                  required
+                  value={form.personal.hasChildren || ''}
+                  options={['Sim', 'Não']}
+                  onChange={(val) =>
+                    setForm((p) => ({
+                      ...p,
+                      personal: {
+                        ...p.personal,
+                        hasChildren: val as 'Sim' | 'Não',
+                        childrenCount: val === 'Sim' ? p.personal.childrenCount || '' : '',
+                      },
+                    }))
+                  }
+                />
+              </div>
+
+              {form.personal.hasChildren === 'Sim' && (
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
+                    Quantos filhos? <span className="text-[#C8102E]">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={20}
+                    value={form.personal.childrenCount || ''}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        personal: {
+                          ...p.personal,
+                          childrenCount: e.target.value.replace(/\D/g, '').slice(0, 2),
+                        },
+                      }))
+                    }
+                    placeholder="Ex.: 1, 2..."
+                    className="w-full sm:max-w-xs px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Buscador automático de CEP */}
@@ -999,6 +1070,12 @@ export function ApplicationWizard({
 
             {form.professionalSummary.hasWorkedBefore === 'Sim' && (
               <div className="space-y-4">
+                <p className="text-xs sm:text-sm text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-xl p-3.5">
+                  Informar onde trabalhou anteriormente é <strong>opcional</strong>. Caso queira,
+                  preencha os campos abaixo; se preferir, pode deixar em branco e clicar em
+                  Continuar.
+                </p>
+
                 {form.experiences.map((exp, idx) => {
                   const duration = calculateWorkDuration(exp.startDate, exp.endDate, exp.isCurrent);
                   return (
@@ -1008,7 +1085,8 @@ export function ApplicationWizard({
                     >
                       <div className="flex items-center justify-between">
                         <h3 className="font-display text-base font-bold text-zinc-950">
-                          Última experiência {form.experiences.length > 1 ? `#${idx + 1}` : ''}
+                          Experiência anterior (opcional){' '}
+                          {form.experiences.length > 1 ? `#${idx + 1}` : ''}
                         </h3>
                         {form.experiences.length > 1 && (
                           <button
@@ -1030,7 +1108,7 @@ export function ApplicationWizard({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                         <div>
                           <label className="block text-sm font-semibold text-zinc-800 mb-1">
-                            Nome da empresa <span className="text-[#C8102E]">*</span>
+                            Nome da empresa (opcional)
                           </label>
                           <input
                             type="text"
@@ -1038,25 +1116,25 @@ export function ApplicationWizard({
                             onChange={(e) =>
                               updateExperience(idx, { companyName: e.target.value })
                             }
-                            placeholder="Ex.: Transportadora ABC"
+                            placeholder="Ex.: Transportadora ABC (opcional)"
                             className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
                           />
                         </div>
                         <div>
                           <label className="block text-sm font-semibold text-zinc-800 mb-1">
-                            Cargo <span className="text-[#C8102E]">*</span>
+                            Cargo (opcional)
                           </label>
                           <input
                             type="text"
                             value={exp.role}
                             onChange={(e) => updateExperience(idx, { role: e.target.value })}
-                            placeholder="Ex.: Motorista / Conferente"
+                            placeholder="Ex.: Motorista / Conferente (opcional)"
                             className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
                           />
                         </div>
                         <div>
                           <label className="block text-sm font-semibold text-zinc-800 mb-1">
-                            Data de entrada <span className="text-[#C8102E]">*</span>
+                            Data de entrada (opcional)
                           </label>
                           <input
                             type="date"
@@ -1426,48 +1504,46 @@ export function ApplicationWizard({
           </div>
         )}
 
-        {/* PASSO 3 — DOCUMENTO COM FOTO (FRENTE E VERSO ABERTO) + CURRÍCULO OPCIONAL */}
+        {/* PASSO 3 — DOCUMENTOS E CURRÍCULO (OPCIONAIS) */}
         {step === 2 && (
           <div className="space-y-6">
             <div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                3. Documento com Foto (Frente e Verso)
+                3. Documentos e Anexos (Opcional)
               </h2>
               <p className="mt-1 text-sm text-zinc-600">
-                Último passo antes de enviar: suba uma foto nítida ou PDF do seu documento com foto
-                aberto mostrando <strong>frente e verso</strong> (RG ou CNH).
+                Não é obrigatório enviar currículo em PDF nem foto de RG/CNH para se candidatar.
+                Caso queira anexar algum arquivo agora para agilizar sua análise, os campos abaixo
+                são opcionais.
               </p>
             </div>
 
-            {/* Aviso transparente de finalidade: verificação de antecedentes e identidade */}
+            {/* Aviso transparente de finalidade */}
             <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 sm:p-5 space-y-2 text-xs sm:text-sm text-zinc-700 leading-relaxed">
               <div className="flex items-center gap-2 font-bold text-zinc-950">
                 <ShieldCheck className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
-                <span>Como usaremos seu documento</span>
+                <span>Envio totalmente opcional</span>
               </div>
               <p>
-                Usaremos essas informações e o documento enviado <strong>apenas</strong> para
-                confirmação da sua identidade, análise cadastral e{' '}
-                <strong>verificação de antecedentes criminais</strong> exigida para atuação no
-                transporte e logística, conforme a LGPD. Os arquivos ficam em ambiente privado e
-                restrito ao RH.
+                Você pode clicar direto em <strong>Continuar</strong> sem enviar nenhum arquivo. Se
+                optar por anexar foto do documento ou currículo, eles serão usados apenas para
+                análise do processo seletivo, confirmação cadastral e verificação aplicável à função,
+                com acesso restrito ao RH (LGPD).
               </p>
             </div>
 
-            {/* Caixa principal: Documento com foto frente e verso aberto */}
+            {/* Caixa opcional: Documento com foto */}
             <div className="border-2 border-dashed border-zinc-300 rounded-2xl p-5 sm:p-6 space-y-4 bg-white">
               <div className="space-y-1">
                 <p className="text-sm font-bold text-zinc-950">
-                  Foto do documento aberto (Frente e Verso — RG ou CNH){' '}
-                  <span className="text-[#C8102E]">*</span>
+                  Foto de documento (RG ou CNH — opcional)
                 </p>
                 <p className="text-xs text-zinc-600">
-                  Aceitamos JPG, PNG ou PDF (até 5 MB cada). Se o documento for frente e verso
-                  separados, você pode enviar as 2 fotos aqui.
+                  Opcional. Se desejar enviar, aceitamos JPG, PNG ou PDF (até 5 MB cada).
                 </p>
               </div>
 
-              <label className="flex items-center justify-center gap-2.5 w-full px-5 py-4 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl cursor-pointer transition-colors min-h-[52px]">
+              <label className="flex items-center justify-center gap-2.5 w-full px-5 py-4 text-sm font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer transition-colors min-h-[52px]">
                 {uploadingIdDoc ? (
                   <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
                 ) : (
@@ -1477,8 +1553,8 @@ export function ApplicationWizard({
                   {uploadingIdDoc
                     ? 'Enviando documento...'
                     : identityAttachments.length > 0
-                      ? 'Adicionar outra foto do documento (verso ou complemento)'
-                      : 'Tirar foto ou enviar documento (Frente e Verso)'}
+                      ? 'Adicionar outra foto do documento (opcional)'
+                      : 'Enviar foto do documento (opcional)'}
                 </span>
                 <input
                   type="file"
@@ -1534,10 +1610,11 @@ export function ApplicationWizard({
             <div className="pt-4 border-t border-zinc-200 space-y-4">
               <div>
                 <h3 className="text-sm font-bold text-zinc-900">
-                  Currículo ou certificados (opcional)
+                  Currículo em PDF ou certificados (opcional)
                 </h3>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Se desejar, anexe também seu currículo ou certificado de curso (NR-11, MOPP, etc.).
+                  Também é opcional. Anexe apenas se desejar enviar currículo ou certificado de
+                  curso (NR-11, MOPP, etc.).
                 </p>
               </div>
 
@@ -1637,7 +1714,11 @@ export function ApplicationWizard({
                   </button>
                 </div>
                 <p className="text-zinc-800 font-medium">
-                  {form.personal.fullName} · {form.personal.phone}
+                  {form.personal.fullName} · {form.personal.gender} ·{' '}
+                  {form.personal.hasChildren === 'Sim'
+                    ? `Com filhos (${form.personal.childrenCount})`
+                    : 'Sem filhos'}{' '}
+                  · {form.personal.phone}
                 </p>
                 <p className="text-xs text-zinc-600 mt-0.5">
                   {form.personal.email} · {form.personal.street ? `${form.personal.street}, ` : ''}
@@ -1664,13 +1745,29 @@ export function ApplicationWizard({
                   {form.professionalSummary.startAvailability}
                 </p>
                 {form.professionalSummary.hasWorkedBefore === 'Sim' ? (
-                  <ul className="mt-1.5 space-y-1 text-xs text-zinc-700">
-                    {form.experiences.map((exp) => (
-                      <li key={exp.id}>
-                        <strong>{exp.role}</strong> em {exp.companyName} ({exp.durationLabel})
-                      </li>
-                    ))}
-                  </ul>
+                  (() => {
+                    const filled = form.experiences.filter(
+                      (exp) =>
+                        exp.companyName.trim() !== '' ||
+                        exp.role.trim() !== '' ||
+                        exp.startDate.trim() !== ''
+                    );
+                    return filled.length > 0 ? (
+                      <ul className="mt-1.5 space-y-1 text-xs text-zinc-700">
+                        {filled.map((exp) => (
+                          <li key={exp.id}>
+                            <strong>{exp.role || 'Cargo não informado'}</strong>
+                            {exp.companyName ? ` em ${exp.companyName}` : ''}
+                            {exp.startDate ? ` (${exp.durationLabel})` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-zinc-600 mt-1">
+                        Já trabalhou anteriormente (dados da empresa não informados — opcional).
+                      </p>
+                    );
+                  })()
                 ) : (
                   <p className="text-xs text-zinc-600 mt-1">Buscando primeiro emprego.</p>
                 )}
@@ -1678,7 +1775,7 @@ export function ApplicationWizard({
 
               <div className="border border-zinc-200 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="font-bold text-zinc-900">Documentos anexados</p>
+                  <p className="font-bold text-zinc-900">Documentos anexados (opcional)</p>
                   <button
                     type="button"
                     onClick={() => setStep(2)}
@@ -1689,21 +1786,21 @@ export function ApplicationWizard({
                   </button>
                 </div>
                 <p className="text-xs text-zinc-700">
-                  Documento com foto (frente e verso): {identityAttachments.length} arquivo(s) ·
-                  Outros anexos: {extraAttachments.length} arquivo(s)
+                  {identityAttachments.length === 0 && extraAttachments.length === 0
+                    ? 'Nenhum arquivo anexado (envio opcional).'
+                    : `Documento com foto: ${identityAttachments.length} arquivo(s) · Outros anexos: ${extraAttachments.length} arquivo(s)`}
                 </p>
               </div>
             </div>
 
-            {/* Resumo das atividades + ciência LGPD e verificação de antecedentes */}
+            {/* Resumo das atividades + ciência LGPD */}
             <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 space-y-2 text-xs text-zinc-700 leading-relaxed">
               <p className="font-bold text-zinc-900">
                 Privacidade e uso das informações ({settings.cnpj})
               </p>
               <p>
-                Os dados preenchidos e o documento com foto enviado serão usados exclusivamente para
-                análise do processo seletivo, confirmação de identidade e{' '}
-                <strong>verificação de antecedentes criminais</strong> aplicável à função.{' '}
+                Os dados preenchidos e eventuais documentos enviados serão usados exclusivamente para
+                análise do processo seletivo conforme a função e a LGPD.{' '}
                 <button
                   type="button"
                   onClick={() => onNavigate('/privacidade')}
@@ -1749,9 +1846,8 @@ export function ApplicationWizard({
                 />
                 <span className="text-sm text-zinc-900 leading-relaxed">
                   Confirmo que as informações são verdadeiras, estou ciente das atividades e
-                  normas de segurança da vaga e autorizo o uso dos meus dados e documento com foto
-                  para análise cadastral e verificação de antecedentes no processo seletivo (LGPD).{' '}
-                  <span className="text-[#C8102E]">*</span>
+                  normas de segurança da vaga e autorizo o uso dos meus dados no processo seletivo
+                  (LGPD). <span className="text-[#C8102E]">*</span>
                 </span>
               </label>
 

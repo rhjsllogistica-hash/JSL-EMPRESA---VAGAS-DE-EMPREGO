@@ -824,28 +824,42 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
       );
     }
 
-    if (data.professionalSummary.hasWorkedBefore === 'Sim' && data.experiences.length === 0) {
-      return jsonResponse(
-        { error: 'Adicione ao menos uma experiência profissional ou selecione primeiro emprego.' },
-        400
-      );
-    }
-
     const normalizedExperiences = [];
     for (const exp of data.experiences) {
-      const duration = calculateWorkDuration(exp.startDate, exp.endDate || '', exp.isCurrent);
-      if (!duration.valid) {
-        return jsonResponse(
-          { error: `Experiência em "${exp.companyName}": ${duration.label}` },
-          400
-        );
+      const hasAnyField =
+        Boolean(exp.companyName?.trim()) ||
+        Boolean(exp.role?.trim()) ||
+        Boolean(exp.startDate?.trim()) ||
+        Boolean(exp.endDate?.trim()) ||
+        Boolean(exp.isCurrent);
+      if (!hasAnyField) {
+        continue;
       }
-      normalizedExperiences.push({
-        ...exp,
-        calculatedYears: duration.years,
-        calculatedMonths: duration.months,
-        durationLabel: duration.label,
-      });
+
+      if (exp.startDate?.trim()) {
+        const duration = calculateWorkDuration(exp.startDate, exp.endDate || '', Boolean(exp.isCurrent));
+        if (!duration.valid && (exp.endDate?.trim() || exp.isCurrent)) {
+          return jsonResponse(
+            {
+              error: `Experiência${exp.companyName ? ` em "${exp.companyName}"` : ''}: ${duration.label}`,
+            },
+            400
+          );
+        }
+        normalizedExperiences.push({
+          ...exp,
+          calculatedYears: duration.valid ? duration.years : 0,
+          calculatedMonths: duration.valid ? duration.months : 0,
+          durationLabel: duration.valid ? duration.label : 'Período não informado',
+        });
+      } else {
+        normalizedExperiences.push({
+          ...exp,
+          calculatedYears: 0,
+          calculatedMonths: 0,
+          durationLabel: 'Período não informado',
+        });
+      }
     }
 
     // Verifica integridade dos anexos: devem existir, pertencer ao mesmo tenant e ainda não estar vinculados
@@ -1276,6 +1290,8 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
         'Origem',
         'IP de Envio',
         'Candidato',
+        'Sexo',
+        'Filhos',
         'E-mail',
         'Telefone',
         'WhatsApp',
@@ -1296,6 +1312,11 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
         let payload: {
           entrySource?: string;
           submittedIp?: string;
+          personal?: {
+            gender?: string;
+            hasChildren?: string;
+            childrenCount?: string;
+          };
           education?: { educationLevel?: string };
           availability?: {
             travelAvailability?: string;
@@ -1316,12 +1337,19 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
               ? 'Link /vagas1'
               : 'Link /vagas2';
 
+        const childrenLabel =
+          payload.personal?.hasChildren === 'Sim'
+            ? `Sim (${payload.personal?.childrenCount || '?'})`
+            : payload.personal?.hasChildren || '';
+
         csvLines.push(
           [
             r.protocol,
             originLabel,
             payload.submittedIp || '',
             r.candidate_name,
+            payload.personal?.gender || '',
+            childrenLabel,
             r.candidate_email,
             r.candidate_phone,
             r.candidate_whatsapp,

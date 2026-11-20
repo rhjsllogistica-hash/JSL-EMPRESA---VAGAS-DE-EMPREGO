@@ -1116,6 +1116,16 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                         </span>
                       </p>
                       <p>
+                        <strong>Sexo:</strong>{' '}
+                        {detailData.application.personal.gender || 'Não informado'}
+                      </p>
+                      <p>
+                        <strong>Filhos:</strong>{' '}
+                        {detailData.application.personal.hasChildren === 'Sim'
+                          ? `Sim (${detailData.application.personal.childrenCount || '?'} filho(s))`
+                          : detailData.application.personal.hasChildren || 'Não informado'}
+                      </p>
+                      <p>
                         <strong>E-mail:</strong> {detailData.application.personal.email}
                       </p>
                       <p>
@@ -1214,12 +1224,20 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                         className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-1"
                       >
                         <p className="text-sm font-bold text-zinc-950">
-                          {exp.role} — {exp.companyName}
+                          {exp.role || 'Cargo não informado'} —{' '}
+                          {exp.companyName || 'Empresa não informada'}
                         </p>
                         <p className="text-zinc-600">
-                          Área: {exp.area || '—'} · Período: {exp.startDate} até{' '}
-                          {exp.isCurrent ? 'Atual' : exp.endDate} ·{' '}
-                          <strong>{exp.durationLabel}</strong>
+                          Área: {exp.area || '—'} ·{' '}
+                          {exp.startDate ? (
+                            <>
+                              Período: {exp.startDate} até{' '}
+                              {exp.isCurrent ? 'Atual' : exp.endDate || '—'} ·{' '}
+                              <strong>{exp.durationLabel}</strong>
+                            </>
+                          ) : (
+                            <span>Período não informado</span>
+                          )}
                         </p>
                         <p>
                           Carteira assinada: {exp.signedCard || '—'} · Último salário:{' '}

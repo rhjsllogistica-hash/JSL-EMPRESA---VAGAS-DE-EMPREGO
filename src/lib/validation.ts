@@ -81,6 +81,9 @@ export function calculateWorkDuration(
 
 export const personalSchema = z.object({
   fullName: z.string().trim().min(3, 'Informe seu nome completo (mínimo 3 caracteres).').max(140),
+  gender: z.enum(['Homem', 'Mulher', '']).optional().default(''),
+  hasChildren: z.enum(['Sim', 'Não', '']).optional().default(''),
+  childrenCount: z.string().trim().max(10).optional().default(''),
   email: z.string().trim().email('Informe um e-mail válido.').max(160),
   phone: z
     .string()
@@ -120,12 +123,12 @@ export const educationSchema = z.object({
 
 export const workExperienceSchema = z.object({
   id: z.string().min(1).max(128),
-  companyName: z.string().trim().min(2, 'Informe o nome da empresa.').max(160),
-  role: z.string().trim().min(2, 'Informe o cargo ocupado.').max(140),
+  companyName: z.string().trim().max(160).optional().default(''),
+  role: z.string().trim().max(140).optional().default(''),
   area: z.string().trim().max(120).optional().default(''),
-  startDate: z.string().trim().min(4, 'Informe a data de admissão.').max(20),
+  startDate: z.string().trim().max(20).optional().default(''),
   endDate: z.string().trim().max(20).optional().default(''),
-  isCurrent: z.boolean(),
+  isCurrent: z.boolean().optional().default(false),
   signedCard: z.enum(['Sim', 'Não', '']).optional().default(''),
   lastSalary: z.string().trim().max(60).optional().default(''),
   benefits: z.string().trim().max(300).optional().default(''),
@@ -134,9 +137,9 @@ export const workExperienceSchema = z.object({
   equipmentUsed: z.string().trim().max(400).optional().default(''),
   leaveReason: z.string().trim().max(400).optional().default(''),
   notes: z.string().trim().max(600).optional().default(''),
-  calculatedYears: z.number().min(0).max(80),
-  calculatedMonths: z.number().min(0).max(11),
-  durationLabel: z.string().max(100),
+  calculatedYears: z.number().min(0).max(80).optional().default(0),
+  calculatedMonths: z.number().min(0).max(11).optional().default(0),
+  durationLabel: z.string().max(100).optional().default(''),
 });
 
 export const availabilitySchema = z.object({
