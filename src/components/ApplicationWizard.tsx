@@ -1,22 +1,18 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  Camera,
   CheckCircle2,
   Edit3,
-  FileText,
   Loader2,
   MapPin,
   Plus,
-  ShieldCheck,
   Trash2,
-  Upload,
 } from 'lucide-react';
 import { lookupCep } from '../lib/cepLookup.ts';
 import { ChannelPrefix } from '../lib/channelRouting.ts';
-import { submitFullApplication, uploadAttachment } from '../lib/recruitmentService.ts';
+import { submitFullApplication } from '../lib/recruitmentService.ts';
 import {
   availabilitySchema,
   BR_STATES,
@@ -31,7 +27,6 @@ import {
   CompanySettings,
   EntrySource,
   JobPosting,
-  UploadedAttachment,
   WorkExperienceInput,
 } from '../types/recruitment.ts';
 import { ConfirmationReceipt } from './ConfirmationPage.tsx';
@@ -49,7 +44,6 @@ interface ApplicationWizardProps {
 const STEP_TITLES = [
   'Seus Dados e Endereço',
   'Experiência e Vaga',
-  'Documentos e Anexos (Opcional)',
   'Revisar e Enviar',
 ];
 
@@ -205,13 +199,6 @@ export function ApplicationWizard({
   const lastFetchedCepRef = useRef<string>('');
   const cepAbortRef = useRef<AbortController | null>(null);
 
-  // Upload states
-  const [uploadingIdDoc, setUploadingIdDoc] = useState(false);
-  const [idDocError, setIdDocError] = useState('');
-  const [uploadingExtra, setUploadingExtra] = useState(false);
-  const [extraCategory, setExtraCategory] =
-    useState<UploadedAttachment['category']>('curriculo');
-  const [extraError, setExtraError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const effectiveChannel: ChannelPrefix = channelPrefix ?? '/vagas2';
@@ -343,9 +330,6 @@ export function ApplicationWizard({
   }
 
   const progressPct = Math.round(((step + 1) / STEP_TITLES.length) * 100);
-  const identityDocIds = form.identityDocumentIds || [];
-  const identityAttachments = form.attachments.filter((a) => identityDocIds.includes(a.fileId));
-  const extraAttachments = form.attachments.filter((a) => !identityDocIds.includes(a.fileId));
 
   const validateCurrentStep = (): string => {
     if (step === 0) {
@@ -425,13 +409,6 @@ export function ApplicationWizard({
     }
 
     if (step === 2) {
-      if (uploadingIdDoc || uploadingExtra) {
-        return 'Aguarde o término do envio do arquivo para continuar.';
-      }
-      return '';
-    }
-
-    if (step === 3) {
       if (!form.lgpdConsent) {
         return 'Marque a confirmação de ciência e autorização para finalizar sua candidatura.';
       }
@@ -472,83 +449,6 @@ export function ApplicationWizard({
     });
   };
 
-  const handleIdentityDocUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (files.length === 0) return;
-
-    setIdDocError('');
-    if (form.attachments.length + files.length > 6) {
-      setIdDocError('Limite máximo de 6 arquivos por candidatura atingido.');
-      return;
-    }
-
-    for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) {
-        setIdDocError(`O arquivo "${file.name}" excede o limite máximo de 5 MB.`);
-        return;
-      }
-    }
-
-    setUploadingIdDoc(true);
-    try {
-      const uploadedList: UploadedAttachment[] = [];
-      for (const file of files) {
-        const uploaded = await uploadAttachment(file, 'qualificacao', effectiveChannel);
-        uploadedList.push(uploaded);
-      }
-      setForm((prev) => ({
-        ...prev,
-        attachments: [...prev.attachments, ...uploadedList],
-        identityDocumentIds: [
-          ...(prev.identityDocumentIds || []),
-          ...uploadedList.map((u) => u.fileId),
-        ],
-      }));
-    } catch (err) {
-      setIdDocError(err instanceof Error ? err.message : 'Erro no envio do documento.');
-    } finally {
-      setUploadingIdDoc(false);
-    }
-  };
-
-  const handleExtraFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    setExtraError('');
-    if (file.size > 5 * 1024 * 1024) {
-      setExtraError('O arquivo excede o limite máximo de 5 MB.');
-      return;
-    }
-    if (form.attachments.length >= 6) {
-      setExtraError('Limite máximo de 6 arquivos por candidatura atingido.');
-      return;
-    }
-
-    setUploadingExtra(true);
-    try {
-      const uploaded = await uploadAttachment(file, extraCategory, effectiveChannel);
-      setForm((prev) => ({
-        ...prev,
-        attachments: [...prev.attachments, uploaded],
-      }));
-    } catch (err) {
-      setExtraError(err instanceof Error ? err.message : 'Erro no envio do arquivo.');
-    } finally {
-      setUploadingExtra(false);
-    }
-  };
-
-  const removeAttachment = (fileId: string) => {
-    setForm((prev) => ({
-      ...prev,
-      attachments: prev.attachments.filter((a) => a.fileId !== fileId),
-      identityDocumentIds: (prev.identityDocumentIds || []).filter((id) => id !== fileId),
-    }));
-  };
-
   const handleFinalSubmit = async () => {
     const err = validateCurrentStep();
     if (err) {
@@ -572,6 +472,8 @@ export function ApplicationWizard({
           : [];
       const payloadToSend: ApplicationFormState = {
         ...form,
+        attachments: [],
+        identityDocumentIds: [],
         experiences: cleanExperiences,
         personal: {
           ...form.personal,
@@ -1504,196 +1406,12 @@ export function ApplicationWizard({
           </div>
         )}
 
-        {/* PASSO 3 — DOCUMENTOS E CURRÍCULO (OPCIONAIS) */}
+        {/* PASSO 3 — REVISAR E ENVIAR */}
         {step === 2 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                3. Documentos e Anexos (Opcional)
-              </h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Não é obrigatório enviar currículo em PDF nem foto de RG/CNH para se candidatar.
-                Caso queira anexar algum arquivo agora para agilizar sua análise, os campos abaixo
-                são opcionais.
-              </p>
-            </div>
-
-            {/* Aviso transparente de finalidade */}
-            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 sm:p-5 space-y-2 text-xs sm:text-sm text-zinc-700 leading-relaxed">
-              <div className="flex items-center gap-2 font-bold text-zinc-950">
-                <ShieldCheck className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
-                <span>Envio totalmente opcional</span>
-              </div>
-              <p>
-                Você pode clicar direto em <strong>Continuar</strong> sem enviar nenhum arquivo. Se
-                optar por anexar foto do documento ou currículo, eles serão usados apenas para
-                análise do processo seletivo, confirmação cadastral e verificação aplicável à função,
-                com acesso restrito ao RH (LGPD).
-              </p>
-            </div>
-
-            {/* Caixa opcional: Documento com foto */}
-            <div className="border-2 border-dashed border-zinc-300 rounded-2xl p-5 sm:p-6 space-y-4 bg-white">
-              <div className="space-y-1">
-                <p className="text-sm font-bold text-zinc-950">
-                  Foto de documento (RG ou CNH — opcional)
-                </p>
-                <p className="text-xs text-zinc-600">
-                  Opcional. Se desejar enviar, aceitamos JPG, PNG ou PDF (até 5 MB cada).
-                </p>
-              </div>
-
-              <label className="flex items-center justify-center gap-2.5 w-full px-5 py-4 text-sm font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer transition-colors min-h-[52px]">
-                {uploadingIdDoc ? (
-                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Camera className="w-5 h-5" aria-hidden="true" />
-                )}
-                <span>
-                  {uploadingIdDoc
-                    ? 'Enviando documento...'
-                    : identityAttachments.length > 0
-                      ? 'Adicionar outra foto do documento (opcional)'
-                      : 'Enviar foto do documento (opcional)'}
-                </span>
-                <input
-                  type="file"
-                  multiple
-                  className="sr-only"
-                  disabled={uploadingIdDoc}
-                  accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-                  onChange={handleIdentityDocUpload}
-                />
-              </label>
-
-              {idDocError && (
-                <p role="alert" className="text-sm text-red-700 font-medium">
-                  {idDocError}
-                </p>
-              )}
-
-              {identityAttachments.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  {identityAttachments.map((att) => (
-                    <div
-                      key={att.id}
-                      className="flex items-center justify-between gap-3 p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <CheckCircle2
-                          className="w-5 h-5 text-emerald-700 shrink-0"
-                          aria-hidden="true"
-                        />
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-zinc-900 truncate">
-                            {att.originalName}
-                          </p>
-                          <p className="text-xs text-zinc-600 tabular-nums">
-                            Documento com foto · {(att.sizeBytes / 1024).toFixed(0)} KB
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeAttachment(att.fileId)}
-                        className="text-xs font-semibold text-red-700 hover:text-red-900 px-2 py-1 cursor-pointer"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Seção Opcional: Currículo ou Certificados */}
-            <div className="pt-4 border-t border-zinc-200 space-y-4">
-              <div>
-                <h3 className="text-sm font-bold text-zinc-900">
-                  Currículo em PDF ou certificados (opcional)
-                </h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  Também é opcional. Anexe apenas se desejar enviar currículo ou certificado de
-                  curso (NR-11, MOPP, etc.).
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                <select
-                  value={extraCategory}
-                  onChange={(e) =>
-                    setExtraCategory(e.target.value as UploadedAttachment['category'])
-                  }
-                  aria-label="Tipo de anexo opcional"
-                  className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
-                >
-                  <option value="curriculo">Currículo (PDF, DOCX, JPG ou PNG)</option>
-                  <option value="certificado">Certificado (PDF, JPG ou PNG)</option>
-                  <option value="curso">Comprovante de curso (PDF, JPG ou PNG)</option>
-                </select>
-
-                <label className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer transition-colors min-h-[46px]">
-                  <Upload className="w-4 h-4" aria-hidden="true" />
-                  {uploadingExtra ? 'Enviando...' : 'Anexar arquivo opcional'}
-                  <input
-                    type="file"
-                    className="sr-only"
-                    disabled={uploadingExtra}
-                    accept={
-                      extraCategory === 'curriculo'
-                        ? '.pdf,.docx,.jpg,.jpeg,.png'
-                        : '.pdf,.jpg,.jpeg,.png'
-                    }
-                    onChange={handleExtraFileUpload}
-                  />
-                </label>
-              </div>
-
-              {extraError && (
-                <p role="alert" className="text-sm text-red-700 font-medium">
-                  {extraError}
-                </p>
-              )}
-
-              {extraAttachments.length > 0 && (
-                <div className="space-y-2">
-                  {extraAttachments.map((att) => (
-                    <div
-                      key={att.id}
-                      className="flex items-center justify-between gap-3 p-3 bg-zinc-50 border border-zinc-200 rounded-xl"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FileText className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-zinc-900 truncate">
-                            {att.originalName}
-                          </p>
-                          <p className="text-xs text-zinc-500 tabular-nums">
-                            {att.category} · {(att.sizeBytes / 1024).toFixed(0)} KB
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeAttachment(att.fileId)}
-                        className="text-xs font-semibold text-red-700 hover:text-red-900 px-2 py-1 cursor-pointer"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* PASSO 4 — REVISAR E ENVIAR */}
-        {step === 3 && (
           <div className="space-y-5">
             <div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
-                4. Revise e finalize sua candidatura
+                3. Revise e finalize sua candidatura
               </h2>
               <p className="mt-1 text-sm text-zinc-600">
                 Confira seus dados antes de enviar. Se precisar ajustar algo, clique em Editar.
@@ -1773,24 +1491,6 @@ export function ApplicationWizard({
                 )}
               </div>
 
-              <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="font-bold text-zinc-900">Documentos anexados (opcional)</p>
-                  <button
-                    type="button"
-                    onClick={() => setStep(2)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                    Editar
-                  </button>
-                </div>
-                <p className="text-xs text-zinc-700">
-                  {identityAttachments.length === 0 && extraAttachments.length === 0
-                    ? 'Nenhum arquivo anexado (envio opcional).'
-                    : `Documento com foto: ${identityAttachments.length} arquivo(s) · Outros anexos: ${extraAttachments.length} arquivo(s)`}
-                </p>
-              </div>
             </div>
 
             {/* Resumo das atividades + ciência LGPD */}
@@ -1799,8 +1499,8 @@ export function ApplicationWizard({
                 Privacidade e uso das informações ({settings.cnpj})
               </p>
               <p>
-                Os dados preenchidos e eventuais documentos enviados serão usados exclusivamente para
-                análise do processo seletivo conforme a função e a LGPD.{' '}
+                Os dados preenchidos serão usados exclusivamente para análise do processo seletivo
+                conforme a função e a LGPD.{' '}
                 <button
                   type="button"
                   onClick={() => onNavigate('/privacidade')}

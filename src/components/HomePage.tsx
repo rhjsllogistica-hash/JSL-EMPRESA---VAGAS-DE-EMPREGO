@@ -340,11 +340,11 @@ export function HomePage({
                 02. Cadastro profissional
               </p>
               <h3 className="font-display text-lg font-bold text-zinc-900">
-                Histórico e currículo em etapas
+                Cadastro simples em 3 etapas
               </h3>
               <p className="text-sm text-zinc-600 leading-relaxed">
-                Informe contatos, escolaridade, disponibilidade e, caso deseje, anexe seu currículo
-                ou documento de forma opcional.
+                Informe seus dados de contato, escolaridade, experiência e disponibilidade de forma
+                rápida pelo celular — sem precisar enviar arquivos.
               </p>
             </div>
 
@@ -386,8 +386,8 @@ export function HomePage({
                 </h3>
                 <p className="mt-1 text-sm text-zinc-600 max-w-2xl leading-relaxed">
                   Nunca cobramos taxas de inscrição, exames prévios pagos por Pix ou depósitos
-                  bancários. Os dados preenchidos e eventuais documentos enviados são utilizados
-                  exclusivamente para análise do processo seletivo conforme a LGPD.
+                  bancários. Os dados preenchidos são utilizados exclusivamente para análise do
+                  processo seletivo conforme a LGPD.
                 </p>
               </div>
             </div>
