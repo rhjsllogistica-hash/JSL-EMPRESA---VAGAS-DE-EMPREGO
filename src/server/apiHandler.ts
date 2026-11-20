@@ -720,6 +720,54 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
     );
   }
 
+  // 5b. Consulta pública por IP para retornar candidato já inscrito direto à tela de confirmação
+  if (method === 'GET' && pathname === '/api/applications/status') {
+    const rawChannel =
+      url.searchParams.get('channel') || request.headers.get('x-recruitment-channel');
+    const resolvedChannel = rawChannel
+      ? resolveExplicitChannel(rawChannel)
+      : { tenantId: 2 as 1 | 2, channelPath: '/vagas2' as const };
+
+    if (rawChannel && !resolvedChannel) {
+      return jsonResponse({ error: 'Canal inválido.' }, 400);
+    }
+
+    const targetTenantId = resolvedChannel?.tenantId ?? 2;
+    const row = await db
+      .prepare(
+        `SELECT id, protocol, candidate_name, job_title, status, created_at
+         FROM applications
+         WHERE tenant_id = ? AND json_extract(payload_json, '$.submittedIp') = ?
+         ORDER BY created_at DESC
+         LIMIT 1`
+      )
+      .bind(targetTenantId, ip)
+      .first<{
+        id: string;
+        protocol: string;
+        candidate_name: string;
+        job_title: string;
+        status: string;
+        created_at: string;
+      }>();
+
+    if (!row) {
+      return jsonResponse({ submitted: false });
+    }
+
+    return jsonResponse({
+      submitted: true,
+      receipt: {
+        applicationId: row.id,
+        protocol: row.protocol,
+        submittedAt: row.created_at,
+        candidateName: row.candidate_name,
+        jobTitle: row.job_title,
+        status: row.status,
+      },
+    });
+  }
+
   // 6. Submissão pública de candidatura (idempotente, canal obrigatório, vínculo atômico de anexos)
   if (method === 'POST' && pathname === '/api/applications') {
     const allowed = await checkPersistentRateLimit(db, `submit:${ip}`, 10, 15 * 60 * 1000);

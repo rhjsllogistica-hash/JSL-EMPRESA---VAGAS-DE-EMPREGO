@@ -1,4 +1,4 @@
-import { CheckCircle2, Home, Printer } from 'lucide-react';
+import { CheckCircle2, Home, MessageSquare, Printer } from 'lucide-react';
 
 export interface ConfirmationReceipt {
   applicationId: string;
@@ -6,14 +6,20 @@ export interface ConfirmationReceipt {
   submittedAt: string;
   candidateName: string;
   jobTitle: string;
+  status?: string;
 }
 
 interface ConfirmationPageProps {
   receipt: ConfirmationReceipt | null;
+  lockedByIp?: boolean;
   onNavigate: (path: string) => void;
 }
 
-export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps) {
+export function ConfirmationPage({
+  receipt,
+  lockedByIp = false,
+  onNavigate,
+}: ConfirmationPageProps) {
   if (!receipt) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
@@ -35,6 +41,10 @@ export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps)
   }
 
   const formattedDate = new Date(receipt.submittedAt).toLocaleString('pt-BR');
+  const displayStatus =
+    receipt.status && receipt.status !== 'Recebida'
+      ? receipt.status
+      : 'Enviado — Aguardando 1ª etapa';
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
@@ -61,8 +71,8 @@ export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps)
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-zinc-500">Status inicial</p>
-            <p className="mt-1 text-base font-bold text-zinc-900">Enviado — Aguardando 1ª etapa</p>
+            <p className="text-xs font-medium text-zinc-500">Situação da candidatura</p>
+            <p className="mt-1 text-base font-bold text-zinc-900">{displayStatus}</p>
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-500">Nome do candidato</p>
@@ -91,14 +101,25 @@ export function ConfirmationPage({ receipt, onNavigate }: ConfirmationPageProps)
             <Printer className="w-4 h-4" aria-hidden="true" />
             Imprimir comprovante
           </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('/')}
-            className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
-          >
-            <Home className="w-4 h-4" aria-hidden="true" />
-            Voltar para o início
-          </button>
+          {lockedByIp ? (
+            <button
+              type="button"
+              onClick={() => onNavigate('/contato')}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4" aria-hidden="true" />
+              Falar com o RH
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onNavigate('/')}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
+            >
+              <Home className="w-4 h-4" aria-hidden="true" />
+              Voltar para o início
+            </button>
+          )}
         </div>
       </div>
     </div>

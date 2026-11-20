@@ -204,6 +204,32 @@ export async function submitFullApplication(
   return res.json();
 }
 
+export async function fetchMyApplicationStatus(channelPrefix: ChannelPrefix | null): Promise<{
+  submitted: boolean;
+  receipt?: {
+    applicationId: string;
+    protocol: string;
+    submittedAt: string;
+    candidateName: string;
+    jobTitle: string;
+    status?: string;
+  };
+}> {
+  const effectiveChannel: ChannelPrefix = channelPrefix ?? '/vagas2';
+  const res = await fetch(
+    `/api/applications/status?channel=${encodeURIComponent(effectiveChannel)}`,
+    {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    }
+  );
+  if (!res.ok) {
+    return { submitted: false };
+  }
+  return res.json();
+}
+
 export async function submitContactMessage(
   msg: ContactMessageInput,
   channelPrefix: ChannelPrefix | null

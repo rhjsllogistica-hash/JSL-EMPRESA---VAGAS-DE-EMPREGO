@@ -12,6 +12,11 @@ import {
 } from 'lucide-react';
 import { lookupCep } from '../lib/cepLookup.ts';
 import { ChannelPrefix } from '../lib/channelRouting.ts';
+import {
+  clearApplicationDraft,
+  loadApplicationDraft,
+  saveApplicationDraft,
+} from '../lib/draftStorage.ts';
 import { submitFullApplication } from '../lib/recruitmentService.ts';
 import {
   availabilitySchema,
@@ -188,11 +193,58 @@ export function ApplicationWizard({
   onSuccess,
   onNavigate,
 }: ApplicationWizardProps) {
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState<ApplicationFormState>(createInitialFormState);
+  const [initialDraft] = useState(() => loadApplicationDraft(channelPrefix));
+  const [step, setStep] = useState<number>(() => {
+    if (
+      initialDraft &&
+      (!selectedJob || initialDraft.jobId === selectedJob.id) &&
+      initialDraft.step >= 0 &&
+      initialDraft.step < STEP_TITLES.length
+    ) {
+      return initialDraft.step;
+    }
+    return 0;
+  });
+  const [form, setForm] = useState<ApplicationFormState>(() => {
+    const base = createInitialFormState();
+    if (!initialDraft?.form) return base;
+    if (!selectedJob || initialDraft.jobId === selectedJob.id) {
+      return {
+        ...base,
+        ...initialDraft.form,
+        personal: { ...base.personal, ...(initialDraft.form.personal || {}) },
+        education: { ...base.education, ...(initialDraft.form.education || {}) },
+        professionalSummary: {
+          ...base.professionalSummary,
+          ...(initialDraft.form.professionalSummary || {}),
+        },
+        availability: { ...base.availability, ...(initialDraft.form.availability || {}) },
+        roleSpecific: { ...base.roleSpecific, ...(initialDraft.form.roleSpecific || {}) },
+        safetyAndAccessibility: {
+          ...base.safetyAndAccessibility,
+          ...(initialDraft.form.safetyAndAccessibility || {}),
+        },
+        experiences:
+          Array.isArray(initialDraft.form.experiences) && initialDraft.form.experiences.length > 0
+            ? initialDraft.form.experiences
+            : base.experiences,
+        attachments: [],
+        identityDocumentIds: [],
+      };
+    }
+    // Se mudou de vaga, preserva os dados pessoais já preenchidos
+    return {
+      ...base,
+      personal: { ...base.personal, ...(initialDraft.form.personal || {}) },
+    };
+  });
   const [stepError, setStepError] = useState('');
   const [honeypot, setHoneypot] = useState('');
-  const [idempotencyKey] = useState(() => crypto.randomUUID().replace(/-/g, ''));
+  const [idempotencyKey] = useState(() =>
+    initialDraft && (!selectedJob || initialDraft.jobId === selectedJob.id)
+      ? initialDraft.idempotencyKey
+      : crypto.randomUUID().replace(/-/g, '')
+  );
 
   // CEP lookup state
   const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'found' | 'not_found'>('idle');
@@ -209,36 +261,27 @@ export function ApplicationWizard({
         ? 'vagas2'
         : 'site_principal';
 
-  const draftKey = selectedJob
-    ? `jsl_draft_v2_${channelPrefix ? channelPrefix.slice(1) : 'principal'}_${selectedJob.id}`
-    : null;
-
+  // Caso abra /candidatura sem ?vaga=, tenta restaurar automaticamente a vaga salva no rascunho
   useEffect(() => {
-    if (!draftKey) return;
-    try {
-      const saved = sessionStorage.getItem(draftKey);
-      if (saved) {
-        const parsed = JSON.parse(saved) as Partial<ApplicationFormState>;
-        setForm((prev) => ({
-          ...prev,
-          ...parsed,
-          attachments: parsed.attachments || [],
-          identityDocumentIds: parsed.identityDocumentIds || [],
-        }));
+    if (!selectedJob && initialDraft?.jobId) {
+      const matched = availableJobs.find((j) => j.id === initialDraft.jobId);
+      if (matched) {
+        onSelectJob(matched);
       }
-    } catch {
-      // ignora rascunho corrompido
     }
-  }, [draftKey]);
+  }, [availableJobs, initialDraft, onSelectJob, selectedJob]);
 
+  // Salva automaticamente cada passo e campo preenchido em localStorage (sobrevive a queda de rede ou saída)
   useEffect(() => {
-    if (!draftKey) return;
-    try {
-      sessionStorage.setItem(draftKey, JSON.stringify(form));
-    } catch {
-      // ignora erro de quota
-    }
-  }, [draftKey, form]);
+    if (!selectedJob) return;
+    saveApplicationDraft(channelPrefix, {
+      jobId: selectedJob.id,
+      step,
+      idempotencyKey,
+      form,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [channelPrefix, form, idempotencyKey, selectedJob, step]);
 
   const triggerCepLookup = async (rawCep: string, force = false) => {
     const digits = rawCep.replace(/\D/g, '');
@@ -527,13 +570,13 @@ export function ApplicationWizard({
         entrySource
       );
 
-      if (draftKey) sessionStorage.removeItem(draftKey);
+      clearApplicationDraft(channelPrefix);
       onSuccess(receipt);
     } catch (submitErr) {
       setStepError(
         submitErr instanceof Error
-          ? submitErr.message
-          : 'Erro ao finalizar candidatura. Seus dados foram preservados; tente novamente.'
+          ? `${submitErr.message} Seus dados continuam salvos neste navegador.`
+          : 'Sem conexão ou erro ao finalizar candidatura. Seus dados continuam salvos — tente novamente assim que a internet voltar.'
       );
     } finally {
       setSubmitting(false);

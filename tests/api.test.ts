@@ -1511,6 +1511,112 @@ test('Submission succeeds without attachments, with hasWorkedBefore=Sim without 
   assert.ok(csvText.includes('Sim (2)'));
 });
 
+test('GET /api/applications/status identifies submitted IP per channel without leaking PII and resets after delete', async () => {
+  const db = await setupTestDb();
+  const candidateIp = '203.0.113.150';
+
+  // Antes do envio: retorna submitted: false
+  const beforeRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications/status?channel=/vagas1`, {
+      headers: { 'CF-Connecting-IP': candidateIp },
+    }),
+    { DB: db }
+  );
+  assert.equal(beforeRes.status, 200);
+  const beforeData = (await beforeRes.json()) as { submitted: boolean };
+  assert.equal(beforeData.submitted, false);
+
+  // Envio pelo /vagas1
+  const submitRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        'X-Recruitment-Channel': '/vagas1',
+        'CF-Connecting-IP': candidateIp,
+      },
+      body: JSON.stringify(
+        buildValidApplicationPayload({
+          channel: '/vagas1',
+          personal: {
+            ...buildValidApplicationPayload().personal,
+            fullName: 'Lucas Retorno IP',
+          },
+        })
+      ),
+    }),
+    { DB: db }
+  );
+  assert.equal(submitRes.status, 201);
+  const created = (await submitRes.json()) as { applicationId: string; protocol: string };
+
+  // Mesmo IP no /vagas1 -> submitted: true com recibo mínimo (sem email/telefone)
+  const afterRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications/status?channel=/vagas1`, {
+      headers: { 'CF-Connecting-IP': candidateIp },
+    }),
+    { DB: db }
+  );
+  assert.equal(afterRes.status, 200);
+  const afterData = (await afterRes.json()) as {
+    submitted: boolean;
+    receipt?: {
+      applicationId: string;
+      protocol: string;
+      candidateName: string;
+      jobTitle: string;
+      status: string;
+      email?: string;
+    };
+  };
+  assert.equal(afterData.submitted, true);
+  assert.equal(afterData.receipt?.applicationId, created.applicationId);
+  assert.equal(afterData.receipt?.protocol, created.protocol);
+  assert.equal(afterData.receipt?.candidateName, 'Lucas Retorno IP');
+  assert.equal(afterData.receipt?.email, undefined);
+
+  // Isolamento: mesmo IP consultando /vagas2 NÃO enxerga inscrição de /vagas1
+  const crossChannelRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications/status?channel=/vagas2`, {
+      headers: { 'CF-Connecting-IP': candidateIp },
+    }),
+    { DB: db }
+  );
+  const crossData = (await crossChannelRes.json()) as { submitted: boolean };
+  assert.equal(crossData.submitted, false);
+
+  // Outro IP no /vagas1 também retorna submitted: false
+  const otherIpRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications/status?channel=/vagas1`, {
+      headers: { 'CF-Connecting-IP': '198.51.100.199' },
+    }),
+    { DB: db }
+  );
+  const otherIpData = (await otherIpRes.json()) as { submitted: boolean };
+  assert.equal(otherIpData.submitted, false);
+
+  // Se admin excluir a candidatura, o IP volta a poder se candidatar
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.251');
+  const delRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/applications/${created.applicationId}`, {
+      method: 'DELETE',
+      headers: { Origin: ORIGIN, Cookie: cookie1 },
+    }),
+    { DB: db }
+  );
+  assert.equal(delRes.status, 200);
+
+  const afterDelRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/applications/status?channel=/vagas1`, {
+      headers: { 'CF-Connecting-IP': candidateIp },
+    }),
+    { DB: db }
+  );
+  const afterDelData = (await afterDelRes.json()) as { submitted: boolean };
+  assert.equal(afterDelData.submitted, false);
+});
+
 
 
 
