@@ -10,9 +10,12 @@
     --brand-graphite: #18181B;
   }
 
-  html {
+  html,
+  body {
     font-family: var(--font-sans);
     scroll-behavior: smooth;
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -23,10 +26,28 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+
+  /* Evita zoom automático em iOS/Android WebView ao tocar em campos de formulário */
+  @media (max-width: 639px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='file']),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -569,31 +569,45 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const stats = listData?.stats || { total: 0, novas: 0, emAcompanhamento: 0, finalizadas: 0 };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-neutral-50">
-      {/* Menu lateral grafite, branco e vermelho */}
+    <div className="min-h-[calc(100dvh-4rem)] flex flex-col lg:flex-row bg-neutral-50">
+      {/* Menu lateral grafite, branco e vermelho (compacto no celular/tablet) */}
       <aside className="lg:w-72 bg-zinc-900 text-zinc-100 shrink-0 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-zinc-800">
-        <div className="p-5 sm:p-6 space-y-6">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-zinc-400">Recrutador autenticado</p>
-            <p className="font-display text-lg font-extrabold text-white truncate">
-              {session.displayName}
-            </p>
-            <p className="font-mono-tabular text-xs text-zinc-400">
-              @{session.username} · Canal {session.channelPath}
-            </p>
+        <div className="p-4 sm:p-6 space-y-4 lg:space-y-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-0.5 min-w-0">
+              <p className="text-[11px] sm:text-xs font-medium text-zinc-400">
+                Recrutador autenticado
+              </p>
+              <p className="font-display text-base sm:text-lg font-extrabold text-white truncate">
+                {session.displayName}
+              </p>
+              <p className="font-mono-tabular text-[11px] sm:text-xs text-zinc-400 truncate">
+                @{session.username} · Canal {session.channelPath}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="lg:hidden inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl shrink-0 min-h-[38px] cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+              Sair
+            </button>
           </div>
 
           {/* Link exclusivo do canal */}
-          <div className="bg-zinc-800/80 border border-zinc-700 rounded-xl p-4 space-y-3">
+          <div className="bg-zinc-800/80 border border-zinc-700 rounded-xl p-3.5 sm:p-4 space-y-2.5 sm:space-y-3">
             <div>
               <p className="text-xs font-semibold text-zinc-300">Link exclusivo do seu canal</p>
-              <p className="mt-1 font-mono-tabular text-xs text-zinc-400 break-all">{channelUrl}</p>
+              <p className="mt-1 font-mono-tabular text-[11px] sm:text-xs text-zinc-400 break-all">
+                {channelUrl}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={handleCopyChannelLink}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-lg cursor-pointer transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-lg min-h-[38px] cursor-pointer transition-colors"
               >
                 {copiedChannel ? (
                   <>
@@ -611,7 +625,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 href={session.channelPath}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-zinc-200 bg-zinc-700 hover:bg-zinc-600 rounded-lg"
+                className="inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-zinc-200 bg-zinc-700 hover:bg-zinc-600 rounded-lg min-h-[38px]"
                 title="Abrir canal em nova aba"
               >
                 <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
@@ -620,48 +634,53 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
           </div>
 
-          <nav aria-label="Navegação administrativa" className="space-y-1.5">
+          <nav
+            aria-label="Navegação administrativa"
+            className={`grid ${
+              session.tenantId === 2 ? 'grid-cols-2 lg:grid-cols-1' : 'grid-cols-1'
+            } gap-2 lg:space-y-1.5 lg:block`}
+          >
             <button
               type="button"
               onClick={() => setActiveTab('applications')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold rounded-xl border transition-colors cursor-pointer ${
+              className={`w-full flex items-center justify-center lg:justify-start gap-2 sm:gap-3 px-3 sm:px-3.5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl border transition-colors min-h-[44px] cursor-pointer ${
                 activeTab === 'applications'
                   ? 'text-white bg-zinc-800 border-zinc-700'
                   : 'text-zinc-300 border-transparent hover:bg-zinc-800/60 hover:text-white'
               }`}
             >
               <LayoutDashboard
-                className={`w-4 h-4 ${
+                className={`w-4 h-4 shrink-0 ${
                   activeTab === 'applications' ? 'text-[#C8102E]' : 'text-zinc-400'
                 }`}
                 aria-hidden="true"
               />
-              <span>Candidaturas do Canal</span>
+              <span className="truncate">Candidaturas</span>
             </button>
 
             {session.tenantId === 2 && (
               <button
                 type="button"
                 onClick={() => setActiveTab('app-release')}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold rounded-xl border transition-colors cursor-pointer ${
+                className={`w-full flex items-center justify-center lg:justify-start gap-2 sm:gap-3 px-3 sm:px-3.5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl border transition-colors min-h-[44px] cursor-pointer ${
                   activeTab === 'app-release'
                     ? 'text-white bg-zinc-800 border-zinc-700'
                     : 'text-zinc-300 border-transparent hover:bg-zinc-800/60 hover:text-white'
                 }`}
               >
                 <Smartphone
-                  className={`w-4 h-4 ${
+                  className={`w-4 h-4 shrink-0 ${
                     activeTab === 'app-release' ? 'text-[#C8102E]' : 'text-zinc-400'
                   }`}
                   aria-hidden="true"
                 />
-                <span>Aplicativo (APK)</span>
+                <span className="truncate">Aplicativo (APK)</span>
               </button>
             )}
           </nav>
         </div>
 
-        <div className="p-5 sm:p-6 border-t border-zinc-800 flex items-center justify-between lg:block space-y-0 lg:space-y-3">
+        <div className="hidden lg:block p-6 border-t border-zinc-800 space-y-3">
           <button
             type="button"
             onClick={handleLogout}
@@ -674,7 +693,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       </aside>
 
       {/* Conteúdo Principal */}
-      <div className="flex-1 p-4 sm:p-8 max-w-[1360px] w-full space-y-6">
+      <div className="flex-1 min-w-0 p-3.5 sm:p-6 lg:p-8 max-w-[1360px] w-full space-y-5 sm:space-y-6">
         {session.tenantId === 2 && activeTab === 'app-release' ? (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -735,19 +754,19 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
               {/* Versão ativa no momento */}
-              <div className="lg:col-span-5 bg-white border border-zinc-200 rounded-2xl p-6 space-y-5">
-                <div className="flex items-center gap-4">
+              <div className="lg:col-span-5 bg-white border border-zinc-200 rounded-2xl p-4 sm:p-6 space-y-5">
+                <div className="flex items-center gap-3.5 sm:gap-4">
                   <img
                     src="/assets/aistudio/Emblema_JSL_Log_stica__Processo_Seletivo_d80f5c2b.png"
                     alt="Ícone JSL - Processo seletivo"
                     referrerPolicy="no-referrer"
-                    className="w-16 h-16 rounded-2xl border border-zinc-200 object-cover shrink-0"
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border border-zinc-200 object-cover shrink-0"
                   />
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-zinc-500">Versão ativa no site</p>
-                    <h2 className="font-display text-lg font-extrabold text-zinc-950 truncate">
+                    <h2 className="font-display text-base sm:text-lg font-extrabold text-zinc-950 truncate">
                       JSL - Processo seletivo
                     </h2>
                     <p className="text-xs text-zinc-500 truncate">
@@ -767,8 +786,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="text-zinc-500">Arquivo</dt>
-                      <dd className="font-medium text-zinc-900 truncate max-w-[200px]">
+                      <dt className="text-zinc-500 shrink-0">Arquivo</dt>
+                      <dd className="font-medium text-zinc-900 truncate max-w-[180px] sm:max-w-[200px]">
                         {appReleasesData.active.fileName}
                       </dd>
                     </div>
@@ -789,7 +808,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     </div>
                     <div className="flex justify-between gap-2">
                       <dt className="text-zinc-500">Atualizado em (SP)</dt>
-                      <dd className="font-medium text-zinc-900 tabular-nums">
+                      <dd className="font-medium text-zinc-900 tabular-nums text-right">
                         {formatDateTimeSaoPaulo(
                           appReleasesData.active.publishedAt || appReleasesData.active.createdAt
                         )}
@@ -806,9 +825,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 {appReleasesData?.active && (
                   <a
                     href="/api/app-release/download"
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl"
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-xs font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl min-h-[44px]"
                   >
-                    <Download className="w-4 h-4" aria-hidden="true" />
+                    <Download className="w-4 h-4 shrink-0" aria-hidden="true" />
                     Testar download do APK ativo
                   </a>
                 )}
@@ -817,7 +836,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               {/* Formulário de Upload de Novo APK */}
               <form
                 onSubmit={handleUploadApkSubmit}
-                className="lg:col-span-7 bg-white border border-zinc-200 rounded-2xl p-6 space-y-5"
+                className="lg:col-span-7 bg-white border border-zinc-200 rounded-2xl p-4 sm:p-6 space-y-5"
               >
                 <div>
                   <h2 className="font-display text-lg font-extrabold text-zinc-950">
@@ -833,10 +852,10 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   <label className="block text-sm font-semibold text-zinc-800 mb-2">
                     Arquivo Android (.apk) — até 80 MB
                   </label>
-                  <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-300 hover:border-[#C8102E] rounded-2xl p-6 text-center cursor-pointer transition-colors bg-neutral-50">
+                  <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-300 hover:border-[#C8102E] rounded-2xl p-5 sm:p-6 text-center cursor-pointer transition-colors bg-neutral-50">
                     <UploadCloud className="w-8 h-8 text-[#C8102E]" aria-hidden="true" />
                     {apkFile ? (
-                      <div className="space-y-0.5">
+                      <div className="space-y-0.5 max-w-full">
                         <p className="text-sm font-bold text-zinc-950 break-all">
                           {apkFile.name}
                         </p>
@@ -883,7 +902,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       value={apkVersion}
                       onChange={(e) => setApkVersion(e.target.value)}
                       placeholder="Ex: 1.0.1"
-                      className="w-full px-4 py-2.5 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                      className="w-full px-4 py-3 sm:py-2.5 text-base sm:text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                     />
                   </div>
                   <div>
@@ -900,7 +919,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       value={apkNotes}
                       onChange={(e) => setApkNotes(e.target.value)}
                       placeholder="Ex: Melhorias no envio da ficha"
-                      className="w-full px-4 py-2.5 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                      className="w-full px-4 py-3 sm:py-2.5 text-base sm:text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                     />
                   </div>
                 </div>
@@ -929,9 +948,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <button
                   type="submit"
                   disabled={uploadingApk || !apkFile}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl disabled:opacity-50 cursor-pointer transition-colors"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl min-h-[48px] disabled:opacity-50 cursor-pointer transition-colors"
                 >
-                  <UploadCloud className="w-4 h-4" aria-hidden="true" />
+                  <UploadCloud className="w-4 h-4 shrink-0" aria-hidden="true" />
                   {uploadingApk ? 'Enviando e salvando...' : 'Salvar novo APK'}
                 </button>
               </form>
@@ -940,7 +959,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             {/* Histórico de versões enviadas */}
             {appReleasesData && appReleasesData.history.length > 0 && (
               <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 border-b border-zinc-200 flex items-center justify-between">
+                <div className="px-4 sm:px-5 py-4 border-b border-zinc-200 flex items-center justify-between gap-3">
                   <h3 className="font-display text-base font-extrabold text-zinc-950">
                     Histórico de versões publicadas
                   </h3>
@@ -948,7 +967,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     type="button"
                     onClick={loadAppReleases}
                     disabled={loadingAppReleases}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 hover:text-zinc-950 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 hover:text-zinc-950 cursor-pointer shrink-0"
                   >
                     <RefreshCw
                       className={`w-3.5 h-3.5 ${loadingAppReleases ? 'animate-spin' : ''}`}
@@ -957,7 +976,51 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     Atualizar
                   </button>
                 </div>
-                <div className="overflow-x-auto">
+
+                {/* Cards responsivos no celular */}
+                <div className="md:hidden divide-y divide-zinc-200">
+                  {appReleasesData.history.map((rel) => (
+                    <div key={rel.id} className="p-4 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-zinc-950 tabular-nums">
+                              v{rel.version}
+                            </span>
+                            {rel.status === 'active' ? (
+                              <span className="text-xs font-bold text-[#01875F]">
+                                · Ativo no site
+                              </span>
+                            ) : (
+                              <span className="text-xs font-semibold text-zinc-500">
+                                · Arquivado
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-700 truncate mt-0.5">{rel.fileName}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={deletingReleaseId === rel.id}
+                          onClick={() => handleDeleteAppRelease(rel.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg cursor-pointer disabled:opacity-50 shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          Excluir
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500 tabular-nums">
+                        <span>
+                          {(rel.sizeBytes / (1024 * 1024)).toFixed(2).replace('.', ',')} MB
+                        </span>
+                        <span>· {rel.downloadCount} downloads</span>
+                        <span>· {formatDateTimeSaoPaulo(rel.publishedAt || rel.createdAt)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
@@ -1037,26 +1100,26 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         </div>
 
         {/* 4 Cards KPI */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5">
             <p className="text-xs font-medium text-zinc-500">Total</p>
             <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tabular-nums">
               {stats.total}
             </p>
           </div>
-          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5">
             <p className="text-xs font-medium text-zinc-500">Novas (Recebida)</p>
             <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-[#C8102E] tabular-nums">
               {stats.novas}
             </p>
           </div>
-          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5">
             <p className="text-xs font-medium text-zinc-500">Em acompanhamento</p>
             <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tabular-nums">
               {stats.emAcompanhamento}
             </p>
           </div>
-          <div className="bg-white border border-zinc-200 rounded-2xl p-5">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5">
             <p className="text-xs font-medium text-zinc-500">Finalizadas</p>
             <p className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-emerald-700 tabular-nums">
               {stats.finalizadas}
@@ -1065,9 +1128,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         </div>
 
         {/* Barra de Filtros, Datas America/Sao_Paulo e Exportação CSV */}
-        <div className="bg-white border border-zinc-200 rounded-2xl p-5 space-y-4">
+        <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="lg:col-span-2 relative">
+            <div className="sm:col-span-2 relative">
               <Search
                 className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2"
                 aria-hidden="true"
@@ -1078,7 +1141,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Buscar nome, e-mail, telefone, cidade ou protocolo..."
                 aria-label="Buscar candidaturas"
-                className="w-full pl-10 pr-3 py-2.5 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                className="w-full pl-10 pr-3 py-2.5 text-base sm:text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
               />
             </div>
 
@@ -1089,7 +1152,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 setPage(1);
               }}
               aria-label="Filtrar por cargo"
-              className="px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+              className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white border border-zinc-300 rounded-xl"
             >
               <option value="all">Todos os cargos</option>
               {DEFAULT_JOBS.map((j) => (
@@ -1106,7 +1169,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 setPage(1);
               }}
               aria-label="Filtrar por status"
-              className="px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+              className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white border border-zinc-300 rounded-xl"
             >
               <option value="all">Todos os status</option>
               {APPLICATION_STATUSES.map((s) => (
@@ -1123,7 +1186,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 setPage(1);
               }}
               aria-label="Itens por página"
-              className="px-3.5 py-2.5 text-sm bg-white border border-zinc-300 rounded-xl"
+              className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white border border-zinc-300 rounded-xl"
             >
               <option value={15}>15 por página</option>
               <option value={25}>25 por página</option>
@@ -1132,34 +1195,36 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
 
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pt-3 border-t border-zinc-100">
-            <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-600 mb-1">
-                  Data inicial (São Paulo)
-                </label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
-                    setPage(1);
-                  }}
-                  className="px-3 py-2 text-sm border border-zinc-300 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-600 mb-1">
-                  Data final (São Paulo)
-                </label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => {
-                    setDateTo(e.target.value);
-                    setPage(1);
-                  }}
-                  className="px-3 py-2 text-sm border border-zinc-300 rounded-xl"
-                />
+            <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-end gap-3">
+              <div className="grid grid-cols-2 sm:flex gap-3">
+                <div className="min-w-0">
+                  <label className="block text-xs font-semibold text-zinc-600 mb-1">
+                    Data inicial (SP)
+                  </label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => {
+                      setDateFrom(e.target.value);
+                      setPage(1);
+                    }}
+                    className="w-full min-w-0 px-3 py-2 text-base sm:text-sm border border-zinc-300 rounded-xl"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <label className="block text-xs font-semibold text-zinc-600 mb-1">
+                    Data final (SP)
+                  </label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => {
+                      setDateTo(e.target.value);
+                      setPage(1);
+                    }}
+                    className="w-full min-w-0 px-3 py-2 text-base sm:text-sm border border-zinc-300 rounded-xl"
+                  />
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
@@ -1193,23 +1258,23 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => handleExportCsv('page')}
                 disabled={!listData || listData.items.length === 0}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl min-h-[40px] disabled:opacity-50 cursor-pointer"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-zinc-700" aria-hidden="true" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-zinc-700 shrink-0" aria-hidden="true" />
                 Exportar CSV (página atual)
               </button>
               <button
                 type="button"
                 onClick={() => handleExportCsv('filtered')}
                 disabled={!listData || listData.total === 0}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl min-h-[40px] disabled:opacity-50 cursor-pointer"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" aria-hidden="true" />
+                <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 Exportar CSV (todo o filtro)
               </button>
             </div>
@@ -1250,9 +1315,97 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
         )}
 
-        {/* Tabela de Candidaturas */}
+        {/* Lista Responsiva (Cards no Celular + Tabela no Tablet/Desktop) */}
         <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Cards Mobile */}
+          <div className="md:hidden divide-y divide-zinc-200">
+            {loadingList ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-4 space-y-2.5 animate-pulse">
+                  <div className="h-4 w-48 bg-zinc-200 rounded" />
+                  <div className="h-3 w-32 bg-zinc-200 rounded" />
+                  <div className="h-9 w-full bg-zinc-100 rounded-xl" />
+                </div>
+              ))
+            ) : !listData || listData.items.length === 0 ? (
+              <div className="py-12 px-4 text-center">
+                <Inbox className="w-8 h-8 text-zinc-400 mx-auto mb-2" aria-hidden="true" />
+                <p className="font-display font-bold text-zinc-900">
+                  Nenhuma candidatura encontrada
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Quando candidatos se inscreverem pelo link {session.channelPath}, eles
+                  aparecerão aqui automaticamente.
+                </p>
+              </div>
+            ) : (
+              listData.items.map((item) => {
+                const isMainSite = item.entrySource === 'site_principal';
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-4 space-y-3 ${isMainSite ? 'bg-amber-50/80' : 'bg-white'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-base text-zinc-950 break-words">
+                          {item.candidateName}
+                        </p>
+                        <p className="font-mono-tabular text-xs text-zinc-500">
+                          {item.protocol}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-xs font-bold shrink-0 ${getStatusTextClass(item.status)}`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-zinc-700 space-y-1">
+                      <p className="font-semibold text-zinc-900">{item.jobTitle}</p>
+                      <p className="text-zinc-600">
+                        {item.candidateCity}/{item.candidateState} ·{' '}
+                        {isMainSite ? 'Site principal' : `Link ${session.channelPath}`}
+                      </p>
+                      <p className="text-zinc-500 tabular-nums">
+                        {formatDateTimeSaoPaulo(item.createdAt)}
+                        {item.submittedIp ? ` · IP ${item.submittedIp}` : ''}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => openDetailDrawer(item.id)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-zinc-900 hover:bg-[#C8102E] rounded-xl min-h-[42px] cursor-pointer transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                        Ver ficha
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteTarget({
+                            id: item.id,
+                            candidateName: item.candidateName,
+                            protocol: item.protocol,
+                          })
+                        }
+                        aria-label={`Excluir ficha de ${item.candidateName}`}
+                        className="inline-flex items-center justify-center gap-1 px-3.5 py-2.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl min-h-[42px] cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
@@ -1425,21 +1578,21 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           aria-modal="true"
           aria-label="Ficha completa do candidato"
         >
-          <div className="bg-white w-full max-w-2xl h-full overflow-y-auto shadow-2xl border-l border-zinc-200 flex flex-col">
-            <div className="sticky top-0 z-10 bg-zinc-900 text-white px-6 py-4 flex items-start justify-between gap-4">
+          <div className="bg-white w-full sm:max-w-2xl h-full overflow-y-auto shadow-2xl border-l border-zinc-200 flex flex-col">
+            <div className="sticky top-0 z-10 bg-zinc-900 text-white px-4 sm:px-6 py-4 flex items-start justify-between gap-3 sm:gap-4">
               <div className="min-w-0">
                 {detailData ? (
                   <>
-                    <p className="font-mono-tabular text-xs font-bold text-red-400">
+                    <p className="font-mono-tabular text-[11px] sm:text-xs font-bold text-red-400 break-words">
                       {detailData.application.protocol} ·{' '}
                       {detailData.application.entrySource === 'site_principal'
                         ? 'Site principal (painel /vagas2)'
                         : `Canal ${detailData.application.channelPath}`}
                     </p>
-                    <h2 className="font-display text-xl font-extrabold truncate">
+                    <h2 className="font-display text-lg sm:text-xl font-extrabold truncate">
                       {detailData.application.personal.fullName}
                     </h2>
-                    <p className="text-xs text-zinc-300 mt-0.5">
+                    <p className="text-xs text-zinc-300 mt-0.5 break-words">
                       {detailData.application.jobTitle} · {detailData.application.jobSalaryDisplay}
                     </p>
                   </>
@@ -1451,13 +1604,13 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 type="button"
                 onClick={() => setSelectedId(null)}
                 aria-label="Fechar ficha lateral"
-                className="p-2 text-zinc-300 hover:text-white rounded-lg cursor-pointer"
+                className="p-2 text-zinc-300 hover:text-white rounded-lg cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6 flex-1">
+            <div className="p-4 sm:p-6 space-y-6 flex-1">
               {loadingDetail && (
                 <p className="text-sm text-zinc-500 py-8 text-center">
                   Carregando dados completos da candidatura...
@@ -1617,7 +1770,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           ? `Sim (${detailData.application.personal.childrenCount || '?'} filho(s))`
                           : detailData.application.personal.hasChildren || 'Não informado'}
                       </p>
-                      <p>
+                      <p className="break-all">
                         <strong>E-mail:</strong> {detailData.application.personal.email}
                       </p>
                       <p>

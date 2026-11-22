@@ -217,7 +217,7 @@ export default function App() {
     }
 
     if (route === '/aplicativo') {
-      return <AppDownloadPage channelPrefix={parsed.channelPrefix} onNavigate={navigateRoute} />;
+      return <AppDownloadPage channelPrefix={parsed.channelPrefix} />;
     }
 
     if (
@@ -328,7 +328,7 @@ export default function App() {
     parsed.route !== '/aplicativo';
 
   return (
-    <div className="min-h-screen flex flex-col bg-neutral-50 text-zinc-900">
+    <div className="min-h-dvh flex flex-col bg-neutral-50 text-zinc-900 overflow-x-clip">
       <Header
         currentRoute={parsed.route}
         channelPrefix={parsed.channelPrefix}
@@ -338,35 +338,36 @@ export default function App() {
       {showDraftBanner && draftJob && savedDraft && (
         <div className="bg-amber-50 border-b border-amber-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="text-xs sm:text-sm text-amber-950">
+            <div className="text-xs sm:text-sm text-amber-950 leading-snug">
               <strong>Inscrição em andamento:</strong> {draftJob.title} (Etapa {savedDraft.step + 1}{' '}
               de 3). Seus dados preenchidos estão salvos.
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
               <button
                 type="button"
                 onClick={handleDiscardDraft}
-                className="px-3 py-1.5 text-xs font-semibold text-amber-900 hover:underline cursor-pointer"
+                className="px-3 py-2 text-xs font-semibold text-amber-900 hover:underline cursor-pointer min-h-[38px]"
               >
                 Descartar
               </button>
               <button
                 type="button"
                 onClick={handleResumeDraft}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-lg cursor-pointer"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-lg cursor-pointer min-h-[40px]"
               >
-                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 Continuar de onde parei
               </button>
             </div>
           </div>
         </div>
       )}
-      <main className="flex-1">{renderPage()}</main>
+      <main className="flex-1 min-w-0">{renderPage()}</main>
       {!isAdminRoute && (
         <Footer
           settings={settings}
           channelPrefix={parsed.channelPrefix}
+          currentRoute={parsed.route}
           onNavigate={navigateRoute}
         />
       )}

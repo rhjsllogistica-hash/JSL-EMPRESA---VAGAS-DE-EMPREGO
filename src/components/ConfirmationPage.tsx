@@ -47,10 +47,10 @@ export function ConfirmationPage({
       : 'Enviado — Aguardando 1ª etapa';
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
-      <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10">
-        <div className="flex items-center gap-3 text-emerald-700 mb-4">
-          <CheckCircle2 className="w-8 h-8 shrink-0" aria-hidden="true" />
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-16">
+      <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-10">
+        <div className="flex items-center gap-2.5 sm:gap-3 text-emerald-700 mb-3 sm:mb-4">
+          <CheckCircle2 className="w-7 h-7 sm:w-8 sm:h-8 shrink-0" aria-hidden="true" />
           <span className="text-xs font-bold uppercase tracking-wider">
             Protocolo registrado no sistema
           </span>
@@ -59,28 +59,32 @@ export function ConfirmationPage({
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
           ENVIADO COM SUCESSO!
         </h1>
-        <p className="mt-2 text-base font-medium text-zinc-700">
+        <p className="mt-2 text-sm sm:text-base font-medium text-zinc-700 leading-relaxed">
           Aguarde o processo seletivo. Caso seja aprovado na 1ª etapa, o RH irá entrar em contato para entrevista.
         </p>
 
-        <div className="mt-8 bg-zinc-50 border border-zinc-200 rounded-xl p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="mt-6 sm:mt-8 bg-zinc-50 border border-zinc-200 rounded-xl p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
           <div>
             <p className="text-xs font-medium text-zinc-500">Número de protocolo</p>
-            <p className="mt-1 font-mono-tabular text-xl font-bold text-[#C8102E]">
+            <p className="mt-1 font-mono-tabular text-lg sm:text-xl font-bold text-[#C8102E] break-all">
               {receipt.protocol}
             </p>
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-500">Situação da candidatura</p>
-            <p className="mt-1 text-base font-bold text-zinc-900">{displayStatus}</p>
+            <p className="mt-1 text-sm sm:text-base font-bold text-zinc-900">{displayStatus}</p>
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-500">Nome do candidato</p>
-            <p className="mt-1 text-base font-semibold text-zinc-900">{receipt.candidateName}</p>
+            <p className="mt-1 text-sm sm:text-base font-semibold text-zinc-900 break-words">
+              {receipt.candidateName}
+            </p>
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-500">Cargo escolhido</p>
-            <p className="mt-1 text-base font-semibold text-zinc-900">{receipt.jobTitle}</p>
+            <p className="mt-1 text-sm sm:text-base font-semibold text-zinc-900 break-words">
+              {receipt.jobTitle}
+            </p>
           </div>
           <div className="sm:col-span-2">
             <p className="text-xs font-medium text-zinc-500">Data da inscrição</p>
@@ -88,35 +92,35 @@ export function ConfirmationPage({
           </div>
         </div>
 
-        <p className="mt-6 text-sm text-zinc-700 leading-relaxed bg-emerald-50/70 border border-emerald-200 rounded-xl p-4">
+        <p className="mt-6 text-xs sm:text-sm text-zinc-700 leading-relaxed bg-emerald-50/70 border border-emerald-200 rounded-xl p-4">
           Sua candidatura foi enviada e registrada com segurança. Aguarde o processo seletivo: caso seja aprovado na 1ª etapa, a equipe de RH entrará em contato pelos canais informados para agendar sua entrevista.
         </p>
 
-        <div className="mt-8 flex flex-col sm:flex-row gap-3">
+        <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-3">
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl min-h-[48px] cursor-pointer"
           >
-            <Printer className="w-4 h-4" aria-hidden="true" />
+            <Printer className="w-4 h-4 shrink-0" aria-hidden="true" />
             Imprimir comprovante
           </button>
           {lockedByIp ? (
             <button
               type="button"
               onClick={() => onNavigate('/contato')}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl min-h-[48px] cursor-pointer"
             >
-              <MessageSquare className="w-4 h-4" aria-hidden="true" />
+              <MessageSquare className="w-4 h-4 shrink-0" aria-hidden="true" />
               Falar com o RH
             </button>
           ) : (
             <button
               type="button"
               onClick={() => onNavigate('/')}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl min-h-[48px] cursor-pointer"
             >
-              <Home className="w-4 h-4" aria-hidden="true" />
+              <Home className="w-4 h-4 shrink-0" aria-hidden="true" />
               Voltar para o início
             </button>
           )}

@@ -6,11 +6,11 @@ import { CompanySettings } from '../types/recruitment.ts';
 
 export function PrivacyPolicyPage({ settings }: { settings: CompanySettings }) {
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-10 space-y-6">
         <div>
           <p className="text-xs font-semibold text-[#C8102E] mb-2">CONFORMIDADE LGPD</p>
-          <h1 className="font-display text-3xl font-extrabold text-zinc-950 tracking-tight">
+          <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
             Política de Privacidade e Proteção de Dados
           </h1>
           <p className="mt-2 text-sm text-zinc-500">
@@ -31,9 +31,9 @@ export function PrivacyPolicyPage({ settings }: { settings: CompanySettings }) {
           <p>
             <strong>Endereço:</strong> {settings.address}
           </p>
-          <p>
+          <p className="break-words">
             <strong>Encarregado pelo Tratamento de Dados (DPO):</strong> {settings.dpoName} —{' '}
-            {settings.dpoEmail}
+            <span className="break-all">{settings.dpoEmail}</span>
           </p>
         </section>
 
@@ -96,11 +96,11 @@ export function PrivacyPolicyPage({ settings }: { settings: CompanySettings }) {
 
 export function TermsOfUsePage({ settings }: { settings: CompanySettings }) {
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-10 space-y-6">
         <div>
           <p className="text-xs font-semibold text-[#C8102E] mb-2">REGRAS DO PORTAL</p>
-          <h1 className="font-display text-3xl font-extrabold text-zinc-950 tracking-tight">
+          <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
             Termos de Uso do Portal de Carreiras
           </h1>
         </div>
@@ -193,12 +193,12 @@ export function ContactPage({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-5 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
+        <div className="lg:col-span-5 space-y-5 sm:space-y-6">
           <div>
             <p className="text-xs font-semibold text-[#C8102E] mb-2">ATENDIMENTO AO CANDIDATO</p>
-            <h1 className="font-display text-3xl font-extrabold text-zinc-950 tracking-tight">
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
               Fale com a nossa equipe
             </h1>
             <p className="mt-2 text-sm text-zinc-600 leading-relaxed">
@@ -207,19 +207,21 @@ export function ContactPage({
             </p>
           </div>
 
-          <div className="bg-white border border-zinc-200 rounded-2xl p-6 space-y-4 text-sm">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-6 space-y-4 text-sm">
             <div>
               <p className="text-xs font-semibold text-zinc-500">Empresa Responsável</p>
-              <p className="mt-0.5 font-semibold text-zinc-900">{settings.legalName}</p>
+              <p className="mt-0.5 font-semibold text-zinc-900 break-words">
+                {settings.legalName}
+              </p>
               <p className="text-xs text-zinc-500 mt-0.5">CNPJ: {settings.cnpj}</p>
             </div>
             <div className="flex items-start gap-3">
               <MapPin className="w-4 h-4 text-[#C8102E] shrink-0 mt-1" aria-hidden="true" />
-              <span className="text-zinc-700">{settings.address}</span>
+              <span className="text-zinc-700 break-words">{settings.address}</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <Mail className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
-              <span className="text-zinc-700">{settings.institutionalEmail}</span>
+              <span className="text-zinc-700 break-all">{settings.institutionalEmail}</span>
             </div>
             <div className="flex items-center gap-3">
               <Phone className="w-4 h-4 text-[#C8102E] shrink-0" aria-hidden="true" />
@@ -229,7 +231,7 @@ export function ContactPage({
         </div>
 
         <div className="lg:col-span-7">
-          <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-8">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-8">
             {sent ? (
               <div className="py-8 text-center space-y-3">
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" aria-hidden="true" />
@@ -333,9 +335,9 @@ export function ContactPage({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl disabled:opacity-60 cursor-pointer"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl min-h-[48px] disabled:opacity-60 cursor-pointer"
                 >
-                  <Send className="w-4 h-4" aria-hidden="true" />
+                  <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
                   {submitting ? 'Enviando...' : 'Enviar mensagem'}
                 </button>
               </form>

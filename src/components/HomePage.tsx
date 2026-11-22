@@ -39,25 +39,25 @@ export function HomePage({
       <section className="bg-white border-b border-zinc-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-16">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-stretch">
-            <div className="order-2 lg:order-1 lg:col-span-6 flex flex-col justify-center space-y-6">
+            <div className="order-2 lg:order-1 lg:col-span-6 flex flex-col justify-center space-y-5 sm:space-y-6">
               <p className="text-xs sm:text-sm font-bold tracking-wide text-[#C8102E]">
                 JSL - LOGÍSTICA · {brandSubtitle}
               </p>
 
               <h1
                 className="font-display font-extrabold text-zinc-950 tracking-tight leading-[1.06]"
-                style={{ fontSize: 'clamp(2.25rem, 4vw, 3.5rem)', textWrap: 'balance' }}
+                style={{ fontSize: 'clamp(1.85rem, 4.5vw, 3.5rem)', textWrap: 'balance' }}
               >
                 Faça parte da <span className="text-[#C8102E]">nossa equipe!</span>
               </h1>
 
-              <p className="text-base sm:text-lg text-zinc-600 leading-relaxed max-w-xl">
+              <p className="text-sm sm:text-base lg:text-lg text-zinc-600 leading-relaxed max-w-xl">
                 Conheça as oportunidades de trabalho nas áreas de transporte, distribuição e
                 logística. Consulte salários iniciais, benefícios e requisitos antes de iniciar sua
                 candidatura pelo celular ou computador.
               </p>
 
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 pt-1 sm:pt-2">
                 <a
                   href="#vagas-disponiveis"
                   onClick={(e) => {
@@ -66,21 +66,21 @@ export function HomePage({
                       .getElementById('vagas-disponiveis')
                       ?.scrollIntoView({ behavior: 'smooth' });
                   }}
-                  className="inline-flex items-center justify-center gap-2.5 px-7 py-4 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl shadow-sm transition-colors min-h-[52px] whitespace-nowrap shrink-0 cursor-pointer"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 sm:px-7 py-3.5 sm:py-4 text-sm sm:text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl shadow-sm transition-colors min-h-[50px] sm:min-h-[52px] text-center cursor-pointer"
                 >
                   VER VAGAS DISPONÍVEIS
-                  <ArrowRight className="w-5 h-5" aria-hidden="true" />
+                  <ArrowRight className="w-5 h-5 shrink-0" aria-hidden="true" />
                 </a>
                 <button
                   type="button"
                   onClick={() => onNavigate('/privacidade')}
-                  className="inline-flex items-center justify-center px-5 py-3.5 text-sm font-semibold text-zinc-700 hover:text-[#C8102E] border border-zinc-300 hover:border-[#C8102E]/40 rounded-xl transition-colors min-h-[48px] whitespace-nowrap shrink-0 cursor-pointer"
+                  className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3.5 text-sm font-semibold text-zinc-700 hover:text-[#C8102E] border border-zinc-300 hover:border-[#C8102E]/40 rounded-xl transition-colors min-h-[48px] whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   Privacidade e LGPD
                 </button>
               </div>
 
-              <div className="pt-4 border-t border-zinc-100 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-zinc-500">
+              <div className="pt-4 border-t border-zinc-100 flex flex-wrap items-center gap-x-4 sm:gap-x-5 gap-y-2 text-xs font-medium text-zinc-500">
                 <span>Processo seletivo gratuito</span>
                 <span aria-hidden="true">·</span>
                 <span>Contratação CLT</span>
@@ -102,28 +102,28 @@ export function HomePage({
           </div>
 
           {/* Faixa institucional vermelho e branco abaixo do hero */}
-          <div className="mt-10 bg-[#C8102E] text-white rounded-2xl p-6 sm:p-7 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 shadow-sm">
-            <div>
+          <div className="mt-8 sm:mt-10 bg-[#C8102E] text-white rounded-2xl p-5 sm:p-7 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 shadow-sm">
+            <div className="pb-3 border-b border-white/15 sm:pb-0 sm:border-b-0">
               <p className="text-xs font-medium text-red-100">Áreas com vagas abertas</p>
-              <p className="mt-1 font-display text-lg font-extrabold text-white tabular-nums">
+              <p className="mt-1 font-display text-base sm:text-lg font-extrabold text-white tabular-nums">
                 {jobs.length} funções operacionais
               </p>
             </div>
-            <div className="sm:border-l sm:border-white/20 sm:pl-6">
+            <div className="pb-3 border-b border-white/15 sm:pb-0 sm:border-b-0 sm:border-l sm:border-white/20 sm:pl-6">
               <p className="text-xs font-medium text-red-100">Benefícios padrão divulgados</p>
-              <p className="mt-1 font-display text-lg font-extrabold text-white tabular-nums">
+              <p className="mt-1 font-display text-base sm:text-lg font-extrabold text-white tabular-nums">
                 VT + VR R$ 30,00/dia
               </p>
             </div>
-            <div className="lg:border-l lg:border-white/20 lg:pl-6">
+            <div className="pb-3 border-b border-white/15 sm:pb-0 sm:border-b-0 lg:border-l lg:border-white/20 lg:pl-6">
               <p className="text-xs font-medium text-red-100">Regime de contratação</p>
-              <p className="mt-1 font-display text-lg font-extrabold text-white">
+              <p className="mt-1 font-display text-base sm:text-lg font-extrabold text-white">
                 CLT com carteira assinada
               </p>
             </div>
             <div className="sm:border-l sm:border-white/20 sm:pl-6">
               <p className="text-xs font-medium text-red-100">Acompanhamento de candidatura</p>
-              <p className="mt-1 font-display text-lg font-extrabold text-white">
+              <p className="mt-1 font-display text-base sm:text-lg font-extrabold text-white">
                 Protocolo único imediato
               </p>
             </div>
@@ -134,9 +134,9 @@ export function HomePage({
       {/* Vagas Disponíveis */}
       <section
         id="vagas-disponiveis"
-        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 lg:py-20"
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 lg:py-20"
       >
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 sm:mb-10">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold tracking-wide text-[#C8102E] mb-2">
               OPORTUNIDADES ABERTAS
@@ -147,7 +147,7 @@ export function HomePage({
             >
               Vagas disponíveis para candidatura
             </h2>
-            <p className="mt-2 text-base text-zinc-600">
+            <p className="mt-2 text-sm sm:text-base text-zinc-600">
               Leia atentamente os requisitos, condições de trabalho e atividades de cada função. A
               seleção da vaga é obrigatória antes do preenchimento do cadastro.
             </p>
@@ -156,54 +156,56 @@ export function HomePage({
           <div
             role="group"
             aria-label="Filtrar vagas por área"
-            className="inline-flex items-center gap-1 p-1 bg-zinc-100 border border-zinc-200 rounded-xl self-start"
+            className="w-full md:w-auto max-w-full overflow-x-auto no-scrollbar self-start"
           >
-            <button
-              type="button"
-              onClick={() => setAreaFilter('todas')}
-              className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                areaFilter === 'todas'
-                  ? 'bg-white text-zinc-950 shadow-sm'
-                  : 'text-zinc-600 hover:text-zinc-950'
-              }`}
-            >
-              Todas ({jobs.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setAreaFilter('motorista')}
-              className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                areaFilter === 'motorista'
-                  ? 'bg-white text-zinc-950 shadow-sm'
-                  : 'text-zinc-600 hover:text-zinc-950'
-              }`}
-            >
-              Motoristas
-            </button>
-            <button
-              type="button"
-              onClick={() => setAreaFilter('operacional')}
-              className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                areaFilter === 'operacional'
-                  ? 'bg-white text-zinc-950 shadow-sm'
-                  : 'text-zinc-600 hover:text-zinc-950'
-              }`}
-            >
-              Galpão e Logística
-            </button>
+            <div className="inline-flex items-center gap-1 p-1 bg-zinc-100 border border-zinc-200 rounded-xl min-w-max">
+              <button
+                type="button"
+                onClick={() => setAreaFilter('todas')}
+                className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  areaFilter === 'todas'
+                    ? 'bg-white text-zinc-950 shadow-sm'
+                    : 'text-zinc-600 hover:text-zinc-950'
+                }`}
+              >
+                Todas ({jobs.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAreaFilter('motorista')}
+                className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  areaFilter === 'motorista'
+                    ? 'bg-white text-zinc-950 shadow-sm'
+                    : 'text-zinc-600 hover:text-zinc-950'
+                }`}
+              >
+                Motoristas
+              </button>
+              <button
+                type="button"
+                onClick={() => setAreaFilter('operacional')}
+                className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  areaFilter === 'operacional'
+                    ? 'bg-white text-zinc-950 shadow-sm'
+                    : 'text-zinc-600 hover:text-zinc-950'
+                }`}
+              >
+                Galpão e Logística
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
           {filteredJobs.map((job) => (
             <article
               key={job.id}
-              className="bg-white border border-zinc-200 border-t-2 border-t-[#C8102E] rounded-2xl p-6 sm:p-7 flex flex-col justify-between shadow-sm hover:shadow-md transition-all"
+              className="bg-white border border-zinc-200 border-t-2 border-t-[#C8102E] rounded-2xl p-5 sm:p-7 flex flex-col justify-between shadow-sm hover:shadow-md transition-all"
             >
               <div>
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-zinc-100">
-                  <div>
-                    <h3 className="font-display text-xl sm:text-2xl font-bold text-zinc-950">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 pb-4 sm:pb-5 border-b border-zinc-100">
+                  <div className="min-w-0">
+                    <h3 className="font-display text-lg sm:text-2xl font-bold text-zinc-950">
                       {job.title}
                     </h3>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm text-zinc-500">
@@ -215,13 +217,13 @@ export function HomePage({
 
                   <div className="sm:text-right shrink-0">
                     <p className="text-xs font-medium text-zinc-500">Salário inicial</p>
-                    <p className="font-display text-xl font-extrabold text-[#C8102E] tabular-nums">
+                    <p className="font-display text-lg sm:text-xl font-extrabold text-[#C8102E] tabular-nums">
                       {job.salaryDisplay}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-5 space-y-4">
+                <div className="mt-4 sm:mt-5 space-y-4">
                   <p className="text-sm text-zinc-700 leading-relaxed">{job.summary}</p>
 
                   <div className="text-xs text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-xl p-3.5 space-y-1">
@@ -280,18 +282,18 @@ export function HomePage({
                 <button
                   type="button"
                   onClick={() => onViewJobDetails(job)}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-3 text-sm font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors min-h-[46px] cursor-pointer"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-3 text-sm font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors min-h-[48px] cursor-pointer"
                 >
                   VER DETALHES
-                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                  <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onSelectJobForApplication(job)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[46px] cursor-pointer"
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[48px] cursor-pointer"
                 >
                   CANDIDATAR-ME
-                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  <ArrowRight className="w-4 h-4 shrink-0" aria-hidden="true" />
                 </button>
               </div>
             </article>
@@ -302,10 +304,10 @@ export function HomePage({
       {/* Como Funciona o Processo Seletivo */}
       <section
         id="como-funciona"
-        className="bg-white border-y border-zinc-200 py-14 lg:py-20"
+        className="bg-white border-y border-zinc-200 py-10 sm:py-14 lg:py-20"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-2xl mb-12">
+          <div className="max-w-2xl mb-8 sm:mb-12">
             <p className="text-xs font-semibold tracking-wide text-[#C8102E] mb-2">
               ETAPAS DO PROCESSO
             </p>
@@ -315,13 +317,13 @@ export function HomePage({
             >
               Como funciona a seleção na JSL Empresa
             </h2>
-            <p className="mt-2 text-base text-zinc-600">
+            <p className="mt-2 text-sm sm:text-base text-zinc-600">
               Nosso fluxo foi estruturado para ser rápido no celular, transparente em cada etapa e
               respeitoso com seus dados pessoais.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div className="space-y-2.5">
               <p className="font-display text-sm font-bold text-[#C8102E]">
                 01. Escolha da vaga
@@ -375,16 +377,16 @@ export function HomePage({
             </div>
           </div>
 
-          <div className="mt-12 bg-zinc-50 border border-zinc-200 rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-start gap-4">
-              <div className="w-11 h-11 rounded-xl bg-[#C8102E] text-white flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-6 h-6" aria-hidden="true" />
+          <div className="mt-10 sm:mt-12 bg-zinc-50 border border-zinc-200 rounded-2xl p-5 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-5 sm:gap-6">
+            <div className="flex items-start gap-3.5 sm:gap-4">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-[#C8102E] text-white flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-display text-base font-bold text-zinc-950">
                   Compromisso contra fraudes e proteção de dados (LGPD)
                 </h3>
-                <p className="mt-1 text-sm text-zinc-600 max-w-2xl leading-relaxed">
+                <p className="mt-1 text-xs sm:text-sm text-zinc-600 max-w-2xl leading-relaxed">
                   Nunca cobramos taxas de inscrição, exames prévios pagos por Pix ou depósitos
                   bancários. Os dados preenchidos são utilizados exclusivamente para análise do
                   processo seletivo conforme a LGPD.
@@ -394,7 +396,7 @@ export function HomePage({
             <button
               type="button"
               onClick={() => onNavigate('/contato')}
-              className="px-5 py-3 text-sm font-semibold text-zinc-900 bg-white border border-zinc-300 hover:border-[#C8102E] hover:text-[#C8102E] rounded-xl whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              className="w-full md:w-auto px-5 py-3 text-sm font-semibold text-zinc-900 bg-white border border-zinc-300 hover:border-[#C8102E] hover:text-[#C8102E] rounded-xl whitespace-nowrap shrink-0 min-h-[46px] cursor-pointer transition-colors"
             >
               Falar com o RH
             </button>

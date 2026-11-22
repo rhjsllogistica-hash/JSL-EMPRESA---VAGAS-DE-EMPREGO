@@ -14,19 +14,19 @@ export function JobDetailsPage({
   onBack,
 }: JobDetailsPageProps) {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-14">
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-600 hover:text-zinc-950 mb-6 cursor-pointer"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-600 hover:text-zinc-950 mb-5 sm:mb-6 min-h-[40px] cursor-pointer"
       >
-        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+        <ArrowLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
         Voltar para vagas disponíveis
       </button>
 
       <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
         <div className="grid grid-cols-1 md:grid-cols-12 border-b border-zinc-200">
-          <div className="md:col-span-7 p-6 sm:p-8 flex flex-col justify-between">
+          <div className="order-2 md:order-1 md:col-span-7 p-5 sm:p-8 flex flex-col justify-between">
             <div>
               <p className="text-xs font-semibold text-[#C8102E] mb-2">
                 {job.department} · {job.contractType}
@@ -34,10 +34,12 @@ export function JobDetailsPage({
               <h1 className="font-display text-2xl sm:text-4xl font-extrabold text-zinc-950 tracking-tight">
                 {job.title}
               </h1>
-              <p className="mt-3 text-base text-zinc-600 leading-relaxed">{job.summary}</p>
+              <p className="mt-3 text-sm sm:text-base text-zinc-600 leading-relaxed">
+                {job.summary}
+              </p>
             </div>
 
-            <div className="mt-6 pt-6 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="mt-6 pt-5 sm:pt-6 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-medium text-zinc-500">Salário inicial mensal</p>
                 <p className="font-display text-2xl sm:text-3xl font-extrabold text-[#C8102E] tabular-nums">
@@ -48,15 +50,15 @@ export function JobDetailsPage({
               <button
                 type="button"
                 onClick={() => onSelectJobForApplication(job)}
-                className="inline-flex items-center justify-center gap-2 px-7 py-4 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[52px] whitespace-nowrap shrink-0 cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3.5 sm:py-4 text-sm sm:text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[50px] sm:min-h-[52px] whitespace-nowrap shrink-0 cursor-pointer"
               >
                 CANDIDATAR-ME
-                <ArrowRight className="w-5 h-5" aria-hidden="true" />
+                <ArrowRight className="w-5 h-5 shrink-0" aria-hidden="true" />
               </button>
             </div>
           </div>
 
-          <div className="md:col-span-5 h-56 md:h-auto min-h-[240px] bg-zinc-900">
+          <div className="order-1 md:order-2 md:col-span-5 h-52 sm:h-64 md:h-auto min-h-[208px] md:min-h-[240px] bg-zinc-900">
             <ImageWithFallback
               src={job.imageUrl}
               alt={`Ambiente operacional para a vaga de ${job.title}`}
@@ -66,8 +68,8 @@ export function JobDetailsPage({
           </div>
         </div>
 
-        <div className="p-6 sm:p-8 space-y-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-zinc-50 border border-zinc-200 rounded-xl p-5 text-sm">
+        <div className="p-5 sm:p-8 space-y-6 sm:space-y-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-zinc-50 border border-zinc-200 rounded-xl p-4 sm:p-5 text-sm">
             <div>
               <p className="text-xs font-semibold text-zinc-500">Escala e Jornada</p>
               <p className="mt-1 font-medium text-zinc-900">{job.schedule}</p>
@@ -78,7 +80,7 @@ export function JobDetailsPage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
             <div>
               <h2 className="font-display text-lg font-bold text-zinc-950 mb-3">Requisitos</h2>
               <ul className="space-y-2.5 text-sm text-zinc-700">
@@ -110,7 +112,7 @@ export function JobDetailsPage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-zinc-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 pt-6 border-t border-zinc-200">
             <div>
               <h2 className="font-display text-lg font-bold text-zinc-950 mb-3">
                 Condições de Trabalho
@@ -157,10 +159,10 @@ export function JobDetailsPage({
             <button
               type="button"
               onClick={() => onSelectJobForApplication(job)}
-              className="inline-flex items-center justify-center gap-2 px-7 py-4 text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[52px] cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 sm:px-7 py-3.5 sm:py-4 text-sm sm:text-base font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl transition-colors min-h-[50px] sm:min-h-[52px] text-center cursor-pointer"
             >
-              CANDIDATAR-ME PARA {job.title.toUpperCase()}
-              <ArrowRight className="w-5 h-5" aria-hidden="true" />
+              <span>CANDIDATAR-ME PARA {job.title.toUpperCase()}</span>
+              <ArrowRight className="w-5 h-5 shrink-0" aria-hidden="true" />
             </button>
           </div>
         </div>

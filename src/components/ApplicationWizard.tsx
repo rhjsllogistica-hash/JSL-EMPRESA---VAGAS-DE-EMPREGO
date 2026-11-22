@@ -151,16 +151,20 @@ function OptionCards({
   options: string[];
   onChange: (val: string) => void;
 }) {
+  const hasLongOption = options.some((opt) => opt.length > 16);
+  const gridColsClass =
+    options.length === 2
+      ? hasLongOption
+        ? 'grid-cols-1 sm:grid-cols-2'
+        : 'grid-cols-2'
+      : 'grid-cols-1 sm:grid-cols-3';
+
   return (
     <fieldset className="space-y-2">
-      <legend className="text-sm font-semibold text-zinc-900">
+      <legend className="text-sm font-semibold text-zinc-900 leading-snug">
         {label} {required && <span className="text-[#C8102E]">*</span>}
       </legend>
-      <div
-        className={`grid grid-cols-1 ${
-          options.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
-        } gap-2.5`}
-      >
+      <div className={`grid ${gridColsClass} gap-2.5`}>
         {options.map((opt) => {
           const active = value === opt;
           return (
@@ -169,7 +173,7 @@ function OptionCards({
               type="button"
               onClick={() => onChange(opt)}
               aria-pressed={active}
-              className={`px-4 py-3 text-sm font-semibold rounded-xl border text-left transition-colors min-h-[46px] cursor-pointer ${
+              className={`px-3.5 sm:px-4 py-3 text-sm font-semibold rounded-xl border text-left transition-colors min-h-[46px] cursor-pointer ${
                 active
                   ? 'bg-[#C8102E] text-white border-[#C8102E]'
                   : 'bg-white text-zinc-800 border-zinc-300 hover:border-zinc-400'
@@ -341,8 +345,8 @@ export function ApplicationWizard({
 
   if (!selectedJob) {
     return (
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
-        <div className="bg-white border border-zinc-200 rounded-2xl p-6 sm:p-10">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-10">
           <p className="text-xs font-semibold text-[#C8102E] mb-2">SELEÇÃO DA VAGA</p>
           <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950">
             Escolha a vaga para começar
@@ -351,15 +355,17 @@ export function ApplicationWizard({
             Leva poucos minutos. Selecione abaixo a vaga desejada:
           </p>
 
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
             {availableJobs.map((job) => (
               <button
                 key={job.id}
                 type="button"
                 onClick={() => onSelectJob(job)}
-                className="p-5 text-left bg-zinc-50 hover:bg-white border border-zinc-200 hover:border-[#C8102E] rounded-xl transition-colors cursor-pointer"
+                className="p-4 sm:p-5 text-left bg-zinc-50 hover:bg-white border border-zinc-200 hover:border-[#C8102E] rounded-xl transition-colors cursor-pointer min-h-[48px]"
               >
-                <p className="font-display text-lg font-bold text-zinc-950">{job.title}</p>
+                <p className="font-display text-base sm:text-lg font-bold text-zinc-950">
+                  {job.title}
+                </p>
                 <p className="mt-1 text-sm font-bold text-[#C8102E] tabular-nums">
                   {job.salaryDisplay}
                 </p>
@@ -584,28 +590,30 @@ export function ApplicationWizard({
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      {/* Banner da Vaga + Barra de Progresso simples (4 etapas) */}
-      <div className="bg-zinc-900 text-white rounded-2xl p-5 sm:p-6 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
+    <div className="max-w-3xl mx-auto px-3.5 sm:px-6 py-6 sm:py-12">
+      {/* Banner da Vaga + Barra de Progresso */}
+      <div className="bg-zinc-900 text-white rounded-2xl p-4 sm:p-6 mb-5 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="min-w-0">
             <p className="text-xs font-medium text-zinc-400">Candidatura rápida · Vaga selecionada</p>
-            <h1 className="font-display text-xl sm:text-2xl font-extrabold">{selectedJob.title}</h1>
+            <h1 className="font-display text-lg sm:text-2xl font-extrabold break-words">
+              {selectedJob.title}
+            </h1>
           </div>
-          <div className="sm:text-right">
+          <div className="sm:text-right shrink-0">
             <p className="text-xs text-zinc-400">Salário inicial</p>
-            <p className="font-display text-lg font-bold text-red-400 tabular-nums">
+            <p className="font-display text-base sm:text-lg font-bold text-red-400 tabular-nums">
               {selectedJob.salaryDisplay}
             </p>
           </div>
         </div>
 
-        <div className="mt-5 pt-4 border-t border-zinc-800">
-          <div className="flex items-center justify-between text-xs font-medium text-zinc-300 mb-2">
-            <span>
+        <div className="mt-4 sm:mt-5 pt-4 border-t border-zinc-800 space-y-3">
+          <div className="flex items-center justify-between gap-2 text-xs font-medium text-zinc-300">
+            <span className="truncate">
               Passo {step + 1} de {STEP_TITLES.length} · {STEP_TITLES[step]}
             </span>
-            <span className="tabular-nums">{progressPct}%</span>
+            <span className="tabular-nums shrink-0">{progressPct}%</span>
           </div>
           <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div
@@ -613,23 +621,39 @@ export function ApplicationWizard({
               style={{ width: `${progressPct}%` }}
             />
           </div>
+          <div className="grid grid-cols-3 gap-2 pt-0.5">
+            {STEP_TITLES.map((title, idx) => {
+              const isCurrent = idx === step;
+              const isDone = idx < step;
+              return (
+                <div
+                  key={title}
+                  className={`text-[11px] sm:text-xs font-semibold truncate ${
+                    isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-zinc-500'
+                  }`}
+                >
+                  {idx + 1}. {title}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {stepError && (
         <div
           role="alert"
-          className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-sm text-red-900"
+          className="mb-5 sm:mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-sm text-red-900"
         >
           <AlertCircle className="w-5 h-5 text-[#C8102E] shrink-0 mt-0.5" aria-hidden="true" />
-          <div>
+          <div className="min-w-0">
             <p className="font-bold">Confira antes de continuar</p>
-            <p className="mt-0.5">{stepError}</p>
+            <p className="mt-0.5 break-words">{stepError}</p>
           </div>
         </div>
       )}
 
-      <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-8 space-y-6">
+      <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-8 space-y-6">
         {/* PASSO 1 — DADOS PESSOAIS + CEP AUTOMÁTICO */}
         {step === 0 && (
           <div className="space-y-5">
@@ -781,13 +805,13 @@ export function ApplicationWizard({
                         }))
                       }
                       placeholder="00000-000"
-                      className="flex-1 px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                      className="min-w-0 flex-1 px-3.5 sm:px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                     />
                     <button
                       type="button"
                       onClick={() => void triggerCepLookup(form.personal.cep, true)}
                       disabled={cepStatus === 'loading' || form.personal.cep.replace(/\D/g, '').length !== 8}
-                      className="px-4 py-3.5 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-40 cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5"
+                      className="px-3.5 sm:px-4 py-3.5 text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-40 cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 min-h-[48px]"
                     >
                       {cepStatus === 'loading' ? (
                         <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -812,8 +836,8 @@ export function ApplicationWizard({
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2">
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-8 sm:col-span-8">
                     <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
                       Cidade <span className="text-[#C8102E]">*</span>
                     </label>
@@ -827,10 +851,10 @@ export function ApplicationWizard({
                         }))
                       }
                       placeholder="Ex.: São Paulo"
-                      className="w-full px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                      className="w-full px-3.5 sm:px-4 py-3.5 text-base border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                     />
                   </div>
-                  <div>
+                  <div className="col-span-4 sm:col-span-4">
                     <label className="block text-sm font-semibold text-zinc-800 mb-1.5">
                       UF <span className="text-[#C8102E]">*</span>
                     </label>
@@ -842,7 +866,7 @@ export function ApplicationWizard({
                           personal: { ...p.personal, state: e.target.value },
                         }))
                       }
-                      className="w-full px-3 py-3.5 text-base bg-white border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                      className="w-full px-2.5 sm:px-3 py-3.5 text-base bg-white border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
                     >
                       <option value="">UF</option>
                       {BR_STATES.map((uf) => (
@@ -1085,7 +1109,7 @@ export function ApplicationWizard({
                             type="date"
                             value={exp.startDate}
                             onChange={(e) => updateExperience(idx, { startDate: e.target.value })}
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl"
+                            className="w-full min-w-0 px-3.5 sm:px-4 py-3 text-base sm:text-sm bg-white border border-zinc-300 rounded-xl"
                           />
                         </div>
                         <div>
@@ -1097,7 +1121,7 @@ export function ApplicationWizard({
                             disabled={exp.isCurrent}
                             value={exp.isCurrent ? '' : exp.endDate}
                             onChange={(e) => updateExperience(idx, { endDate: e.target.value })}
-                            className="w-full px-4 py-3 text-sm bg-white border border-zinc-300 rounded-xl disabled:bg-zinc-100 disabled:text-zinc-400"
+                            className="w-full min-w-0 px-3.5 sm:px-4 py-3 text-base sm:text-sm bg-white border border-zinc-300 rounded-xl disabled:bg-zinc-100 disabled:text-zinc-400"
                           />
                         </div>
                       </div>
@@ -1463,26 +1487,27 @@ export function ApplicationWizard({
 
             <div className="space-y-3 text-sm">
               <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between gap-2 mb-1">
                   <p className="font-bold text-zinc-900">Dados e endereço</p>
                   <button
                     type="button"
                     onClick={() => setStep(0)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] cursor-pointer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] cursor-pointer shrink-0"
                   >
                     <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
                     Editar
                   </button>
                 </div>
-                <p className="text-zinc-800 font-medium">
+                <p className="text-zinc-800 font-medium break-words">
                   {form.personal.fullName} · {form.personal.gender} ·{' '}
                   {form.personal.hasChildren === 'Sim'
                     ? `Com filhos (${form.personal.childrenCount})`
                     : 'Sem filhos'}{' '}
                   · {form.personal.phone}
                 </p>
-                <p className="text-xs text-zinc-600 mt-0.5">
-                  {form.personal.email} · {form.personal.street ? `${form.personal.street}, ` : ''}
+                <p className="text-xs text-zinc-600 mt-0.5 break-words">
+                  <span className="break-all">{form.personal.email}</span> ·{' '}
+                  {form.personal.street ? `${form.personal.street}, ` : ''}
                   {form.personal.number ? `${form.personal.number} · ` : ''}
                   {form.personal.neighborhood ? `${form.personal.neighborhood} · ` : ''}
                   {form.personal.city}/{form.personal.state} (CEP {form.personal.cep})
@@ -1490,18 +1515,18 @@ export function ApplicationWizard({
               </div>
 
               <div className="border border-zinc-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between gap-2 mb-1">
                   <p className="font-bold text-zinc-900">Experiência e disponibilidade</p>
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] cursor-pointer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] cursor-pointer shrink-0"
                   >
                     <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
                     Editar
                   </button>
                 </div>
-                <p className="text-xs text-zinc-700">
+                <p className="text-xs text-zinc-700 break-words">
                   Escolaridade: {form.education.educationLevel} · Início:{' '}
                   {form.professionalSummary.startAvailability}
                 </p>
@@ -1516,7 +1541,7 @@ export function ApplicationWizard({
                     return filled.length > 0 ? (
                       <ul className="mt-1.5 space-y-1 text-xs text-zinc-700">
                         {filled.map((exp) => (
-                          <li key={exp.id}>
+                          <li key={exp.id} className="break-words">
                             <strong>{exp.role || 'Cargo não informado'}</strong>
                             {exp.companyName ? ` em ${exp.companyName}` : ''}
                             {exp.startDate ? ` (${exp.durationLabel})` : ''}
@@ -1569,7 +1594,7 @@ export function ApplicationWizard({
             </div>
 
             <div className="space-y-3">
-              <label className="flex items-start gap-3 p-4 border border-zinc-300 rounded-xl cursor-pointer">
+              <label className="flex items-start gap-3 p-3.5 sm:p-4 border border-zinc-300 rounded-xl cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.lgpdConsent}
@@ -1585,7 +1610,7 @@ export function ApplicationWizard({
                       },
                     }));
                   }}
-                  className="w-5 h-5 mt-0.5 accent-[#C8102E]"
+                  className="w-5 h-5 mt-0.5 accent-[#C8102E] shrink-0"
                 />
                 <span className="text-sm text-zinc-900 leading-relaxed">
                   Confirmo que as informações são verdadeiras, estou ciente das atividades e
@@ -1594,16 +1619,16 @@ export function ApplicationWizard({
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 p-4 border border-zinc-200 rounded-xl cursor-pointer">
+              <label className="flex items-start gap-3 p-3.5 sm:p-4 border border-zinc-200 rounded-xl cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.talentPoolConsent}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, talentPoolConsent: e.target.checked }))
                   }
-                  className="w-5 h-5 mt-0.5 accent-[#C8102E]"
+                  className="w-5 h-5 mt-0.5 accent-[#C8102E] shrink-0"
                 />
-                <span className="text-sm text-zinc-700">
+                <span className="text-sm text-zinc-700 leading-relaxed">
                   (Opcional) Autorizo manter meu cadastro para futuras vagas compatíveis.
                 </span>
               </label>

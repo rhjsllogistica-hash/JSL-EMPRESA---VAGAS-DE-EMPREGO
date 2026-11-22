@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Download,
-  ExternalLink,
   Info,
   Loader2,
   ShieldCheck,
   Smartphone,
   Star,
   ThumbsUp,
+  X,
 } from 'lucide-react';
 import { ChannelPrefix, formatDateTimeSaoPaulo } from '../lib/channelRouting.ts';
 import { fetchPublicAppRelease, PublicAppRelease } from '../lib/recruitmentService.ts';
 
 interface AppDownloadPageProps {
   channelPrefix: ChannelPrefix | null;
-  onNavigate: (route: string) => void;
 }
 
 interface CandidateReview {
@@ -142,7 +143,214 @@ function StarRow({ count, sizeClass = 'w-3.5 h-3.5' }: { count: number; sizeClas
   );
 }
 
-export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPageProps) {
+type ScreenshotId = 'home' | 'jobs' | 'form' | 'confirmation';
+
+interface AppScreenshotItem {
+  id: ScreenshotId;
+  title: string;
+  caption: string;
+}
+
+const APP_SCREENSHOTS: AppScreenshotItem[] = [
+  {
+    id: 'home',
+    title: 'Tela inicial do processo seletivo',
+    caption: 'Acesso direto às vagas operacionais JSL',
+  },
+  {
+    id: 'jobs',
+    title: 'Escolha da vaga e salário',
+    caption: 'Motoristas, empilhadeira, conferente e auxiliar',
+  },
+  {
+    id: 'form',
+    title: 'Ficha rápida pelo celular',
+    caption: 'Salva sozinho mesmo se a internet cair',
+  },
+  {
+    id: 'confirmation',
+    title: 'Acompanhamento da 1ª etapa',
+    caption: 'Protocolo salvo e retorno do RH para entrevista',
+  },
+];
+
+function AppScreenPreview({ id, compact = false }: { id: ScreenshotId; compact?: boolean }) {
+  const pad = compact ? 'p-2.5' : 'p-4';
+  const textXs = compact ? 'text-[9px]' : 'text-xs';
+  const textSm = compact ? 'text-[10px]' : 'text-sm';
+  const titleSize = compact ? 'text-xs' : 'text-base';
+
+  return (
+    <div className="w-full h-full bg-neutral-50 flex flex-col select-none text-left">
+      {/* Mini barra vermelha igual ao site principal */}
+      <div className="bg-[#C8102E] text-white px-3 py-2 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex w-4 h-4 rounded bg-white text-[#C8102E] font-extrabold text-[8px] items-center justify-center">
+            JSL
+          </span>
+          <span className="font-display font-bold text-[10px] tracking-tight">
+            JSL - LOGÍSTICA
+          </span>
+        </div>
+        <span className="px-2 py-0.5 bg-white text-[#C8102E] rounded text-[8px] font-bold">
+          Vagas
+        </span>
+      </div>
+
+      {id === 'home' && (
+        <div className={`${pad} space-y-2.5 flex-1 overflow-hidden`}>
+          <div className="rounded-xl overflow-hidden border border-zinc-200 bg-white">
+            <img
+              src="/assets/aistudio/Venha_Trabalhar_Conosco_na_Log_stica_61ae1d22.png"
+              alt="Prévia da tela inicial JSL"
+              referrerPolicy="no-referrer"
+              className="w-full h-24 sm:h-28 object-cover"
+            />
+          </div>
+          <div className="space-y-1">
+            <p className="text-[9px] font-bold text-[#C8102E] uppercase tracking-wide">
+              Recrutamento Oficial
+            </p>
+            <p className={`font-display font-extrabold text-zinc-950 leading-tight ${titleSize}`}>
+              Construa sua carreira na logística
+            </p>
+            <p className={`text-zinc-600 leading-snug ${textXs}`}>
+              Vagas para motoristas, operação de armazém e distribuição sem cobrança de taxas.
+            </p>
+          </div>
+          <div className="w-full py-1.5 px-3 bg-[#C8102E] text-white rounded-lg text-center font-bold text-[10px]">
+            Ver vagas disponíveis
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+            <div className="bg-white border border-zinc-200 rounded-lg p-2">
+              <p className="font-bold text-[9px] text-zinc-900 truncate">Motorista Caminhão</p>
+              <p className="text-[8px] text-[#C8102E] font-bold mt-0.5">R$ 8.280,00</p>
+            </div>
+            <div className="bg-white border border-zinc-200 rounded-lg p-2">
+              <p className="font-bold text-[9px] text-zinc-900 truncate">Empilhadeira</p>
+              <p className="text-[8px] text-[#C8102E] font-bold mt-0.5">R$ 3.450,00</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {id === 'jobs' && (
+        <div className={`${pad} space-y-2 flex-1 overflow-hidden`}>
+          <div>
+            <p className={`font-display font-extrabold text-zinc-950 ${titleSize}`}>
+              Vagas abertas
+            </p>
+            <p className={`text-zinc-500 ${textXs}`}>Toque na vaga para se candidatar</p>
+          </div>
+          <div className="space-y-1.5">
+            {[
+              { title: 'Motorista de Caminhão', salary: 'R$ 8.280,00 mensais' },
+              { title: 'Motorista Utilitário (Fiorino)', salary: 'R$ 4.100,00 mensais' },
+              { title: 'Operador de Empilhadeira', salary: 'R$ 3.450,00 mensais' },
+              { title: 'Conferente de Logística', salary: 'R$ 2.890,00 mensais' },
+            ].map((job) => (
+              <div
+                key={job.title}
+                className="bg-white border border-zinc-200 rounded-xl p-2 flex items-center justify-between gap-2"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-[10px] text-zinc-950 truncate">{job.title}</p>
+                  <p className="text-[9px] font-semibold text-[#C8102E] tabular-nums">
+                    {job.salary}
+                  </p>
+                </div>
+                <span className="shrink-0 px-2 py-1 bg-[#C8102E] text-white rounded-md text-[8px] font-bold">
+                  Aplicar
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {id === 'form' && (
+        <div className={`${pad} space-y-2 flex-1 overflow-hidden`}>
+          <div className="flex items-center justify-between text-[9px] font-bold text-zinc-700">
+            <span>Etapa 1 de 3 · Seus Dados</span>
+            <span className="text-[#01875F]">Salvo automático</span>
+          </div>
+          <div className="h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+            <div className="h-full w-1/3 bg-[#C8102E] rounded-full" />
+          </div>
+          <div className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2">
+            <div>
+              <p className="text-[8px] font-semibold text-zinc-500">Nome completo</p>
+              <div className="mt-0.5 px-2 py-1 rounded border border-zinc-200 bg-neutral-50 text-[9px] font-medium text-zinc-900">
+                Marcos Oliveira
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <p className="text-[8px] font-semibold text-zinc-500">Sexo</p>
+                <div className="mt-0.5 grid grid-cols-2 gap-1 text-[8px] font-bold">
+                  <span className="py-1 text-center rounded bg-[#C8102E] text-white">Homem</span>
+                  <span className="py-1 text-center rounded border border-zinc-200 text-zinc-600">
+                    Mulher
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[8px] font-semibold text-zinc-500">Tem filhos?</p>
+                <div className="mt-0.5 grid grid-cols-2 gap-1 text-[8px] font-bold">
+                  <span className="py-1 text-center rounded bg-[#C8102E] text-white">Sim (2)</span>
+                  <span className="py-1 text-center rounded border border-zinc-200 text-zinc-600">
+                    Não
+                  </span>
+                </div>
+              </div>
+            </div>
+            <p className="text-[8px] text-[#01875F] font-semibold">
+              Não precisa enviar currículo PDF nem RG.
+            </p>
+          </div>
+          <div className="w-full py-1.5 px-3 bg-[#C8102E] text-white rounded-lg text-center font-bold text-[10px]">
+            Continuar inscrição
+          </div>
+        </div>
+      )}
+
+      {id === 'confirmation' && (
+        <div className={`${pad} space-y-2 flex-1 overflow-hidden`}>
+          <div className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2">
+            <div className="flex items-center gap-1.5 text-[#01875F]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span className="text-[8px] font-extrabold uppercase tracking-wide">
+                Protocolo registrado
+              </span>
+            </div>
+            <p className={`font-display font-extrabold text-zinc-950 ${titleSize}`}>
+              ENVIADO COM SUCESSO!
+            </p>
+            <p className={`text-zinc-700 leading-snug ${textXs}`}>
+              Aguarde o processo seletivo. Caso seja aprovado na 1ª etapa, o RH irá entrar em
+              contato para entrevista.
+            </p>
+            <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-2 space-y-1">
+              <p className="text-[8px] text-zinc-500">Protocolo</p>
+              <p className="font-mono-tabular text-[10px] font-bold text-[#C8102E]">
+                JSL-2026-8F4A21C9
+              </p>
+              <p className="text-[8px] font-semibold text-zinc-800">
+                Status: Enviado — Aguardando 1ª etapa
+              </p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-[8px] text-emerald-950">
+              Seu cadastro fica salvo automaticamente neste celular para acompanhar o retorno do RH.
+            </div>
+          </div>
+          <p className={`${textSm} hidden`} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
   const [loading, setLoading] = useState(true);
   const [release, setRelease] = useState<PublicAppRelease | null>(null);
   const [downloadStarted, setDownloadStarted] = useState(false);
@@ -150,6 +358,8 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
   const [iconError, setIconError] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<'all' | 'motorista' | 'logistica' | '5star'>('all');
   const [helpfulVotes, setHelpfulVotes] = useState<Record<string, 'yes' | 'no'>>({});
+  const [activeScreenshot, setActiveScreenshot] = useState<number | null>(null);
+  const galleryRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -193,10 +403,10 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
     <div className="bg-white min-h-[calc(100vh-4rem)]">
       {/* Cabeçalho estilo Google Play Store */}
       <section className="border-b border-zinc-200 bg-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-          <div className="flex flex-col sm:flex-row items-start gap-6 sm:gap-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
+          <div className="grid grid-cols-[84px_1fr] sm:grid-cols-[128px_1fr] gap-x-4 gap-y-5 sm:gap-x-8 sm:gap-y-5 items-center sm:items-start">
             {/* Ícone Oficial do App */}
-            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[26px] border border-zinc-200 bg-white shadow-md overflow-hidden shrink-0 flex items-center justify-center">
+            <div className="w-[84px] h-[84px] sm:w-32 sm:h-32 sm:row-span-2 rounded-[20px] sm:rounded-[26px] border border-zinc-200 bg-white shadow-md overflow-hidden shrink-0 flex items-center justify-center">
               {!iconError ? (
                 <img
                   src="/assets/aistudio/Emblema_JSL_Log_stica__Processo_Seletivo_d80f5c2b.png"
@@ -213,29 +423,30 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
               )}
             </div>
 
-            {/* Título, Desenvolvedor e Métricas */}
-            <div className="flex-1 min-w-0 space-y-4">
-              <div>
-                <h1 className="font-display text-2xl sm:text-4xl font-extrabold text-zinc-950 tracking-tight text-balance">
-                  JSL - Processo seletivo
-                </h1>
-                <p className="mt-1.5 text-sm sm:text-base font-semibold text-[#01875F]">
-                  JSL - LOGÍSTICA · Recursos Humanos
-                </p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
-                  <span className="inline-flex items-center gap-1 font-medium text-zinc-700">
-                    <ShieldCheck className="w-4 h-4 text-[#01875F]" aria-hidden="true" />
-                    Aplicativo oficial verificado
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>Sem anúncios</span>
-                  <span aria-hidden="true">·</span>
-                  <span>Gratuito</span>
-                </div>
+            {/* Título e Desenvolvedor */}
+            <div className="min-w-0">
+              <h1 className="font-display text-xl sm:text-4xl font-extrabold text-zinc-950 tracking-tight leading-tight text-balance">
+                JSL - Processo seletivo
+              </h1>
+              <p className="mt-1 sm:mt-1.5 text-xs sm:text-base font-semibold text-[#01875F]">
+                JSL - LOGÍSTICA · Vagas de Emprego
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs text-zinc-600">
+                <span className="inline-flex items-center gap-1 font-medium text-zinc-700">
+                  <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#01875F] shrink-0" aria-hidden="true" />
+                  Aplicativo oficial verificado
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>Sem anúncios</span>
+                <span aria-hidden="true">·</span>
+                <span>Gratuito</span>
               </div>
+            </div>
 
+            {/* Métricas e Botão de Download */}
+            <div className="col-span-2 sm:col-span-1 sm:col-start-2 min-w-0 space-y-4">
               {/* Barra de métricas estilo Play Store */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-0 sm:divide-x sm:divide-zinc-200 pt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-0 sm:divide-x sm:divide-zinc-200 pt-1">
                 <div className="sm:pr-5">
                   <p className="text-sm sm:text-base font-extrabold text-zinc-950 tabular-nums flex items-center gap-1">
                     4,9
@@ -269,9 +480,9 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
               </div>
 
               {/* Ações Principais de Download */}
-              <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="pt-1 flex flex-col sm:flex-row sm:items-center gap-3">
                 {loading ? (
-                  <div className="inline-flex items-center gap-2 px-6 py-3.5 text-sm font-semibold text-zinc-600 bg-zinc-100 rounded-lg min-h-[48px]">
+                  <div className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-zinc-600 bg-zinc-100 rounded-lg min-h-[48px]">
                     <Loader2 className="w-4 h-4 animate-spin text-[#01875F]" aria-hidden="true" />
                     Verificando versão disponível...
                   </div>
@@ -280,30 +491,21 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
                     href={release.downloadUrl}
                     download={`JSL-Processo-Seletivo-v${release.version}.apk`}
                     onClick={handleTriggerDownload}
-                    className="inline-flex items-center justify-center gap-2.5 px-8 py-3.5 text-sm sm:text-base font-bold text-white bg-[#01875F] hover:bg-[#016D4D] rounded-lg transition-colors min-h-[48px] shadow-sm whitespace-nowrap cursor-pointer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 sm:px-8 py-3.5 text-sm sm:text-base font-bold text-white bg-[#01875F] hover:bg-[#016D4D] rounded-lg transition-colors min-h-[48px] shadow-sm text-center cursor-pointer"
                   >
-                    <Download className="w-5 h-5" aria-hidden="true" />
-                    Baixar Aplicativo (v{release.version})
+                    <Download className="w-5 h-5 shrink-0" aria-hidden="true" />
+                    <span>Baixar Aplicativo (v{release.version})</span>
                   </a>
                 ) : (
                   <button
                     type="button"
                     disabled
-                    className="inline-flex items-center justify-center gap-2 px-7 py-3.5 text-sm font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-lg min-h-[48px] cursor-not-allowed"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 text-sm font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-lg min-h-[48px] cursor-not-allowed"
                   >
-                    <Smartphone className="w-4 h-4" aria-hidden="true" />
+                    <Smartphone className="w-4 h-4 shrink-0" aria-hidden="true" />
                     Aguardando publicação do APK
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/vagas')}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold text-[#01875F] hover:bg-emerald-50 border border-zinc-200 rounded-lg transition-colors min-h-[48px] whitespace-nowrap cursor-pointer"
-                >
-                  <ExternalLink className="w-4 h-4" aria-hidden="true" />
-                  Acessar vagas pelo navegador
-                </button>
               </div>
 
               {/* Feedback imediato ao clicar em baixar */}
@@ -333,8 +535,8 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
               {!loading && !release && (
                 <p className="text-xs text-zinc-500 flex items-center gap-1.5">
                   <Info className="w-4 h-4 text-zinc-400 shrink-0" aria-hidden="true" />
-                  O arquivo oficial será liberado em instantes pelo recrutamento. Você já pode
-                  enviar sua candidatura normalmente pelo botão ao lado.
+                  O arquivo oficial do aplicativo (.apk) está sendo liberado pelo recrutamento.
+                  Atualize esta página em instantes para fazer o download.
                 </p>
               )}
             </div>
@@ -344,6 +546,68 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
 
       {/* Conteúdo Detalhado estilo Play Store */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-10">
+        {/* Capturas de tela estilo Play Store — mostrando o processo seletivo por dentro */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-display text-xl font-extrabold text-zinc-950">
+                Por dentro do aplicativo
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
+                Veja como funciona o processo seletivo no celular antes mesmo de baixar
+              </p>
+            </div>
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Rolar prévias para a esquerda"
+                onClick={() => galleryRef.current?.scrollBy({ left: -260, behavior: 'smooth' })}
+                className="w-9 h-9 rounded-full border border-zinc-300 bg-white hover:bg-zinc-50 flex items-center justify-center text-zinc-700 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="Rolar prévias para a direita"
+                onClick={() => galleryRef.current?.scrollBy({ left: 260, behavior: 'smooth' })}
+                className="w-9 h-9 rounded-full border border-zinc-300 bg-white hover:bg-zinc-50 flex items-center justify-center text-zinc-700 cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={galleryRef}
+            className="flex gap-3.5 sm:gap-4 overflow-x-auto pb-3 snap-x snap-mandatory scroll-smooth no-scrollbar"
+          >
+            {APP_SCREENSHOTS.map((screen, idx) => (
+              <button
+                key={screen.id}
+                type="button"
+                onClick={() => setActiveScreenshot(idx)}
+                className="snap-start shrink-0 w-[188px] sm:w-[225px] text-left group cursor-pointer focus-visible:outline-2 focus-visible:outline-[#01875F] rounded-2xl"
+              >
+                <div className="h-[305px] sm:h-[340px] rounded-[22px] sm:rounded-[24px] border-[3px] border-zinc-900 bg-white shadow-sm group-hover:shadow-md group-hover:-translate-y-0.5 transition-all overflow-hidden flex flex-col">
+                  <div className="h-3 bg-zinc-900 flex items-center justify-center shrink-0">
+                    <span className="w-10 h-1 rounded-full bg-zinc-700" />
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <AppScreenPreview id={screen.id} compact />
+                  </div>
+                </div>
+                <p className="mt-2.5 text-xs font-bold text-zinc-900 group-hover:text-[#01875F]">
+                  {idx + 1}. {screen.title}
+                </p>
+                <p className="text-[11px] text-zinc-500 leading-snug">{screen.caption}</p>
+              </button>
+            ))}
+          </div>
+          <p className="sm:hidden text-[11px] font-medium text-zinc-400">
+            Deslize para o lado ou toque em qualquer tela para ampliar.
+          </p>
+        </section>
+
         {/* Segurança e compatibilidade */}
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 border border-zinc-200 rounded-2xl p-5 bg-neutral-50">
           <div className="flex items-start gap-3">
@@ -511,31 +775,33 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
           </div>
 
           {/* Filtros funcionais */}
-          <div className="flex flex-wrap items-center gap-2">
-            {(
-              [
-                { id: 'all', label: 'Mais relevantes' },
-                { id: 'motorista', label: 'Motoristas' },
-                { id: 'logistica', label: 'Logística e Estoque' },
-                { id: '5star', label: '5 estrelas' },
-              ] as const
-            ).map((tab) => {
-              const active = reviewFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setReviewFilter(tab.id)}
-                  className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
-                    active
-                      ? 'bg-[#01875F] text-white border-[#01875F]'
-                      : 'bg-white text-zinc-700 border-zinc-300 hover:border-zinc-400'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+          <div className="w-full overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2 min-w-max">
+              {(
+                [
+                  { id: 'all', label: 'Mais relevantes' },
+                  { id: 'motorista', label: 'Motoristas' },
+                  { id: 'logistica', label: 'Logística e Estoque' },
+                  { id: '5star', label: '5 estrelas' },
+                ] as const
+              ).map((tab) => {
+                const active = reviewFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setReviewFilter(tab.id)}
+                    className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 min-h-[38px] cursor-pointer ${
+                      active
+                        ? 'bg-[#01875F] text-white border-[#01875F]'
+                        : 'bg-white text-zinc-700 border-zinc-300 hover:border-zinc-400'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Lista de avaliações */}
@@ -611,6 +877,77 @@ export function AppDownloadPage({ channelPrefix, onNavigate }: AppDownloadPagePr
           </div>
         </section>
       </div>
+
+      {/* Modal de ampliação das telas do app */}
+      {activeScreenshot !== null && APP_SCREENSHOTS[activeScreenshot] && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={APP_SCREENSHOTS[activeScreenshot].title}
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 sm:p-4"
+          onClick={() => setActiveScreenshot(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-sm w-full max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#01875F]">
+                  Tela {activeScreenshot + 1} de {APP_SCREENSHOTS.length}
+                </p>
+                <h3 className="font-display text-base font-extrabold text-zinc-950">
+                  {APP_SCREENSHOTS[activeScreenshot].title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveScreenshot(null)}
+                aria-label="Fechar prévia"
+                className="p-2 text-zinc-500 hover:text-zinc-900 rounded-lg cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-[24px] border-[4px] border-zinc-900 bg-white overflow-hidden h-[360px] sm:h-[420px] flex flex-col">
+              <div className="h-3.5 bg-zinc-900 flex items-center justify-center shrink-0">
+                <span className="w-12 h-1 rounded-full bg-zinc-700" />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <AppScreenPreview id={APP_SCREENSHOTS[activeScreenshot].id} />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveScreenshot((i) =>
+                    i === null ? 0 : (i - 1 + APP_SCREENSHOTS.length) % APP_SCREENSHOTS.length
+                  )
+                }
+                className="inline-flex items-center gap-1 px-4 py-2.5 text-xs font-bold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl min-h-[42px] cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveScreenshot((i) =>
+                    i === null ? 0 : (i + 1) % APP_SCREENSHOTS.length
+                  )
+                }
+                className="inline-flex items-center gap-1 px-4 py-2.5 text-xs font-bold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 rounded-xl min-h-[42px] cursor-pointer"
+              >
+                Próxima
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
