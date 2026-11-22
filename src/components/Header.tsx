@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import jslNavLogo from '../assets/images/jsl_nav_logo_1795310897830.jpg';
 import { buildChannelPath, ChannelPrefix } from '../lib/channelRouting.ts';
 
 interface HeaderProps {
@@ -11,6 +12,7 @@ interface HeaderProps {
 
 export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [logoError, setLogoError] = useState(false);
 
   const navItems = [
     { label: 'Início', route: '/' },
@@ -40,10 +42,20 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
     return (
       <header className="sticky top-0 z-40 bg-white text-zinc-900 border-b border-zinc-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-            <span className="inline-flex w-8 h-8 rounded-lg bg-[#C8102E] items-center justify-center text-white text-xs font-extrabold tracking-tighter shrink-0">
-              JSL
-            </span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            {!logoError ? (
+              <img
+                src={jslNavLogo}
+                alt="Logo JSL - Processo seletivo"
+                referrerPolicy="no-referrer"
+                onError={() => setLogoError(true)}
+                className="w-9 h-9 rounded-[10px] object-cover border border-zinc-200/80 shadow-sm shrink-0"
+              />
+            ) : (
+              <span className="inline-flex w-9 h-9 rounded-[10px] bg-[#C8102E] items-center justify-center text-white text-xs font-extrabold tracking-tighter shrink-0">
+                JSL
+              </span>
+            )}
             <span className="font-display text-sm sm:text-lg font-extrabold tracking-tight text-zinc-950 truncate">
               JSL - Processo seletivo
             </span>
@@ -68,9 +80,19 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
           }}
           className="flex items-center gap-2 sm:gap-2.5 text-base sm:text-lg font-extrabold tracking-tight text-white whitespace-nowrap min-w-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
         >
-          <span className="inline-flex w-8 h-8 rounded-lg bg-white items-center justify-center text-[#C8102E] text-xs font-extrabold tracking-tighter shrink-0">
-            JSL
-          </span>
+          {!logoError ? (
+            <img
+              src={jslNavLogo}
+              alt="Logo oficial JSL - LOGÍSTICA"
+              referrerPolicy="no-referrer"
+              onError={() => setLogoError(true)}
+              className="w-9 h-9 rounded-[10px] object-cover ring-1 ring-white/75 bg-white shadow-sm shrink-0"
+            />
+          ) : (
+            <span className="inline-flex w-9 h-9 rounded-[10px] bg-white items-center justify-center text-[#C8102E] text-xs font-extrabold tracking-tighter shrink-0">
+              JSL
+            </span>
+          )}
           <span className="font-display truncate">JSL - LOGÍSTICA</span>
         </a>
 

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import jslNavLogo from '../assets/images/jsl_nav_logo_1795310897830.jpg';
 import { buildChannelPath, ChannelPrefix } from '../lib/channelRouting.ts';
 import { CompanySettings } from '../types/recruitment.ts';
 
@@ -9,7 +11,34 @@ interface FooterProps {
 }
 
 export function Footer({ settings, channelPrefix, currentRoute, onNavigate }: FooterProps) {
+  const [logoError, setLogoError] = useState(false);
   const year = new Date().getFullYear();
+
+  if (currentRoute === '/aplicativo') {
+    return (
+      <footer className="bg-zinc-50 text-zinc-500 border-t border-zinc-200 mt-10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 text-zinc-700 font-semibold">
+            {!logoError ? (
+              <img
+                src={jslNavLogo}
+                alt={`Logo ${settings.brandName}`}
+                referrerPolicy="no-referrer"
+                onError={() => setLogoError(true)}
+                className="w-6 h-6 rounded-md object-cover border border-zinc-200 shrink-0"
+              />
+            ) : (
+              <span className="inline-flex w-6 h-6 rounded-md bg-[#C8102E] items-center justify-center text-white text-[10px] font-bold shrink-0">
+                JSL
+              </span>
+            )}
+            <span>JSL - Processo seletivo · Aplicativo Oficial</span>
+          </div>
+          <p>© {year} {settings.brandName}. Processo seletivo gratuito — sem taxas.</p>
+        </div>
+      </footer>
+    );
+  }
 
   return (
     <footer className="bg-zinc-900 text-zinc-300 border-t border-zinc-800 mt-10 sm:mt-16">
@@ -17,9 +46,19 @@ export function Footer({ settings, channelPrefix, currentRoute, onNavigate }: Fo
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 sm:gap-10 pb-8 sm:pb-10 border-b border-zinc-800">
           <div className="space-y-3">
             <div className="flex items-center gap-2.5 text-white">
-              <span className="inline-flex w-7 h-7 rounded bg-[#C8102E] items-center justify-center text-white text-xs font-bold shrink-0">
-                JSL
-              </span>
+              {!logoError ? (
+                <img
+                  src={jslNavLogo}
+                  alt={`Logo ${settings.brandName}`}
+                  referrerPolicy="no-referrer"
+                  onError={() => setLogoError(true)}
+                  className="w-8 h-8 rounded-[9px] object-cover ring-1 ring-white/25 bg-white shadow-sm shrink-0"
+                />
+              ) : (
+                <span className="inline-flex w-8 h-8 rounded-[9px] bg-[#C8102E] items-center justify-center text-white text-xs font-bold shrink-0">
+                  JSL
+                </span>
+              )}
               <span className="font-display font-bold tracking-tight text-lg">
                 {settings.brandName}
               </span>
