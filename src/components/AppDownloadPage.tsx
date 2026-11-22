@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   ChevronDown,
@@ -143,7 +143,7 @@ function StarRow({ count, sizeClass = 'w-3.5 h-3.5' }: { count: number; sizeClas
   );
 }
 
-type ScreenshotId = 'home' | 'jobs' | 'form' | 'confirmation';
+type ScreenshotId = 'home' | 'jobs' | 'details' | 'form' | 'confirmation' | 'interview';
 
 interface AppScreenshotItem {
   id: ScreenshotId;
@@ -163,6 +163,11 @@ const APP_SCREENSHOTS: AppScreenshotItem[] = [
     caption: 'Motoristas, empilhadeira, conferente e auxiliar',
   },
   {
+    id: 'details',
+    title: 'Detalhes da vaga e benefícios',
+    caption: 'Salário, requisitos e benefícios completos',
+  },
+  {
     id: 'form',
     title: 'Ficha rápida pelo celular',
     caption: 'Salva sozinho mesmo se a internet cair',
@@ -170,7 +175,12 @@ const APP_SCREENSHOTS: AppScreenshotItem[] = [
   {
     id: 'confirmation',
     title: 'Acompanhamento da 1ª etapa',
-    caption: 'Protocolo salvo e retorno do RH para entrevista',
+    caption: 'Protocolo salvo automaticamente no celular',
+  },
+  {
+    id: 'interview',
+    title: 'Chamada para entrevista no RH',
+    caption: 'Retorno rápido após aprovação da 1ª etapa',
   },
 ];
 
@@ -204,7 +214,8 @@ function AppScreenPreview({ id, compact = false }: { id: ScreenshotId; compact?:
               src="/assets/aistudio/Venha_Trabalhar_Conosco_na_Log_stica_61ae1d22.png"
               alt="Prévia da tela inicial JSL"
               referrerPolicy="no-referrer"
-              className="w-full h-24 sm:h-28 object-cover"
+              draggable={false}
+              className="w-full h-24 sm:h-28 object-cover pointer-events-none"
             />
           </div>
           <div className="space-y-1">
@@ -314,6 +325,42 @@ function AppScreenPreview({ id, compact = false }: { id: ScreenshotId; compact?:
         </div>
       )}
 
+      {id === 'details' && (
+        <div className={`${pad} space-y-2 flex-1 overflow-hidden`}>
+          <div className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-1.5">
+            <span className="inline-block px-1.5 py-0.5 bg-red-50 text-[#C8102E] rounded text-[8px] font-bold">
+              CLT · Efetivo
+            </span>
+            <p className={`font-display font-extrabold text-zinc-950 leading-tight ${titleSize}`}>
+              Motorista de Caminhão
+            </p>
+            <p className="text-[11px] font-extrabold text-[#C8102E] tabular-nums">
+              R$ 8.280,00 mensais
+            </p>
+          </div>
+          <div className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-1">
+            <p className="text-[9px] font-bold text-zinc-900">Benefícios inclusos</p>
+            <ul className="space-y-1 text-[8px] text-zinc-600">
+              <li className="flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-[#01875F] shrink-0" aria-hidden="true" />
+                Vale-alimentação e refeição
+              </li>
+              <li className="flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-[#01875F] shrink-0" aria-hidden="true" />
+                Plano de saúde e odontológico
+              </li>
+              <li className="flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-[#01875F] shrink-0" aria-hidden="true" />
+                Seguro de vida e treinamento
+              </li>
+            </ul>
+          </div>
+          <div className="w-full py-1.5 px-3 bg-[#C8102E] text-white rounded-lg text-center font-bold text-[10px]">
+            Candidatar-se a esta vaga
+          </div>
+        </div>
+      )}
+
       {id === 'confirmation' && (
         <div className={`${pad} space-y-2 flex-1 overflow-hidden`}>
           <div className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2">
@@ -346,6 +393,42 @@ function AppScreenPreview({ id, compact = false }: { id: ScreenshotId; compact?:
           <p className={`${textSm} hidden`} />
         </div>
       )}
+
+      {id === 'interview' && (
+        <div className={`${pad} space-y-2 flex-1 overflow-hidden`}>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-[#01875F]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span className="text-[8px] font-extrabold uppercase tracking-wide">
+                1ª Etapa concluída
+              </span>
+            </div>
+            <p className={`font-display font-extrabold text-zinc-950 leading-tight ${titleSize}`}>
+              Entrevista com o RH
+            </p>
+            <p className={`text-emerald-950 leading-snug ${textXs}`}>
+              Candidatos selecionados são chamados pelo RH com horário e unidade para entrevista.
+            </p>
+          </div>
+          <div className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-1.5">
+            <p className="text-[9px] font-bold text-zinc-900">Etapas do processo</p>
+            <div className="space-y-1 text-[8px]">
+              <div className="flex items-center justify-between text-[#01875F] font-bold">
+                <span>1. Inscrição pelo app</span>
+                <span>Concluída</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-800 font-semibold">
+                <span>2. Análise do perfil</span>
+                <span>Em andamento</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-500">
+                <span>3. Entrevista presencial RH</span>
+                <span>Próxima</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -359,7 +442,79 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
   const [reviewFilter, setReviewFilter] = useState<'all' | 'motorista' | 'logistica' | '5star'>('all');
   const [helpfulVotes, setHelpfulVotes] = useState<Record<string, 'yes' | 'no'>>({});
   const [activeScreenshot, setActiveScreenshot] = useState<number | null>(null);
+  const [isDraggingGallery, setIsDraggingGallery] = useState(false);
   const galleryRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{
+    active: boolean;
+    startX: number;
+    startScrollLeft: number;
+    moved: boolean;
+  }>({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+    moved: false,
+  });
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const drag = dragStateRef.current;
+      const el = galleryRef.current;
+      if (!drag.active || !el) return;
+
+      const deltaX = event.clientX - drag.startX;
+      if (Math.abs(deltaX) > 5) {
+        drag.moved = true;
+        setIsDraggingGallery(true);
+      }
+      if (drag.moved) {
+        el.scrollLeft = drag.startScrollLeft - deltaX;
+      }
+    };
+
+    const handleMouseUp = () => {
+      const drag = dragStateRef.current;
+      if (!drag.active) return;
+      if (drag.moved) {
+        suppressClickRef.current = true;
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+      }
+      drag.active = false;
+      drag.moved = false;
+      setIsDraggingGallery(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const handleGalleryMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const el = galleryRef.current;
+    if (!el) return;
+    suppressClickRef.current = false;
+    dragStateRef.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: el.scrollLeft,
+      moved: false,
+    };
+  };
+
+  const handleGalleryClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (suppressClickRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickRef.current = false;
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -429,7 +584,7 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
                 JSL - Processo seletivo
               </h1>
               <p className="mt-1 sm:mt-1.5 text-xs sm:text-base font-semibold text-[#01875F]">
-                JSL - LOGÍSTICA · Vagas de Emprego
+                JSL · Vagas de Emprego
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs text-zinc-600">
                 <span className="inline-flex items-center gap-1 font-medium text-zinc-700">
@@ -579,14 +734,23 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
 
           <div
             ref={galleryRef}
-            className="flex gap-3.5 sm:gap-4 overflow-x-auto pb-3 snap-x snap-mandatory scroll-smooth no-scrollbar"
+            onMouseDown={handleGalleryMouseDown}
+            onClickCapture={handleGalleryClickCapture}
+            className={`flex gap-3.5 sm:gap-4 overflow-x-auto pb-3 touch-pan-x overscroll-x-contain select-none no-scrollbar ${
+              isDraggingGallery
+                ? 'cursor-grabbing'
+                : 'cursor-grab snap-x snap-mandatory scroll-smooth'
+            }`}
           >
             {APP_SCREENSHOTS.map((screen, idx) => (
               <button
                 key={screen.id}
                 type="button"
+                draggable={false}
                 onClick={() => setActiveScreenshot(idx)}
-                className="snap-start shrink-0 w-[188px] sm:w-[225px] text-left group cursor-pointer focus-visible:outline-2 focus-visible:outline-[#01875F] rounded-2xl"
+                className={`snap-start shrink-0 w-[188px] sm:w-[225px] text-left group focus-visible:outline-2 focus-visible:outline-[#01875F] rounded-2xl ${
+                  isDraggingGallery ? 'cursor-grabbing' : 'cursor-grab'
+                }`}
               >
                 <div className="h-[305px] sm:h-[340px] rounded-[22px] sm:rounded-[24px] border-[3px] border-zinc-900 bg-white shadow-sm group-hover:shadow-md group-hover:-translate-y-0.5 transition-all overflow-hidden flex flex-col">
                   <div className="h-3 bg-zinc-900 flex items-center justify-center shrink-0">
