@@ -107,9 +107,25 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.use(express.static(distPath, { index: false }));
+    app.get('*', async (req, res) => {
+      try {
+        const htmlPath = path.join(distPath, 'index.html');
+        let html = await fs.readFile(htmlPath, 'utf-8');
+        const host = req.get('host') || `localhost:${PORT}`;
+        const proto =
+          (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() ||
+          req.protocol ||
+          'http';
+        const origin = `${proto}://${host}`;
+        const absoluteImageUrl = `${origin}/assets/whatsapp-preview-jsl.jpg`;
+        html = html
+          .split('content="/assets/whatsapp-preview-jsl.jpg"')
+          .join(`content="${absoluteImageUrl}"`);
+        res.type('html').send(html);
+      } catch {
+        res.sendFile(path.join(distPath, 'index.html'));
+      }
     });
   }
 
