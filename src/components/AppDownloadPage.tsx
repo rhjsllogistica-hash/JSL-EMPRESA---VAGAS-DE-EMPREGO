@@ -1,4 +1,4 @@
-import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   ChevronDown,
@@ -258,7 +258,7 @@ function AppScreenPreview({ id, compact = false }: { id: ScreenshotId; compact?:
               { title: 'Motorista de Caminhão', salary: 'R$ 8.280,00 mensais' },
               { title: 'Motorista Utilitário (Fiorino)', salary: 'R$ 4.100,00 mensais' },
               { title: 'Operador de Empilhadeira', salary: 'R$ 3.450,00 mensais' },
-              { title: 'Conferente de Logística', salary: 'R$ 2.890,00 mensais' },
+              { title: 'Conferente de Pacotes', salary: 'R$ 2.210,00 mensais' },
             ].map((job) => (
               <div
                 key={job.title}
@@ -495,8 +495,8 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
     };
   }, []);
 
-  const handleGalleryMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+  const handleGalleryPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
     const el = galleryRef.current;
     if (!el) return;
     suppressClickRef.current = false;
@@ -649,7 +649,7 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 sm:px-8 py-3.5 text-sm sm:text-base font-bold text-white bg-[#01875F] hover:bg-[#016D4D] rounded-lg transition-colors min-h-[48px] shadow-sm text-center cursor-pointer"
                   >
                     <Download className="w-5 h-5 shrink-0" aria-hidden="true" />
-                    <span>Baixar Aplicativo (v{release.version})</span>
+                    <span>Instalar aplicativo</span>
                   </a>
                 ) : (
                   <button
@@ -734,12 +734,12 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
 
           <div
             ref={galleryRef}
-            onMouseDown={handleGalleryMouseDown}
+            onPointerDown={handleGalleryPointerDown}
             onClickCapture={handleGalleryClickCapture}
-            className={`flex gap-3.5 sm:gap-4 overflow-x-auto pb-3 touch-pan-x overscroll-x-contain select-none no-scrollbar ${
+            className={`flex gap-3.5 sm:gap-4 overflow-x-auto pb-3 touch-manipulation select-none no-scrollbar ${
               isDraggingGallery
                 ? 'cursor-grabbing'
-                : 'cursor-grab snap-x snap-mandatory scroll-smooth'
+                : 'cursor-grab snap-x snap-proximity scroll-smooth'
             }`}
           >
             {APP_SCREENSHOTS.map((screen, idx) => (
@@ -840,7 +840,7 @@ export function AppDownloadPage({ channelPrefix }: AppDownloadPageProps) {
                 <div className="px-5 pb-5 pt-2 border-t border-zinc-100 bg-neutral-50 space-y-3 text-xs sm:text-sm text-zinc-700">
                   <p>
                     <strong>1. Baixe o aplicativo:</strong> Toque no botão verde{' '}
-                    <strong>Baixar Aplicativo</strong> acima e aguarde o término do download.
+                    <strong>Instalar aplicativo</strong> acima e aguarde o término do download.
                   </p>
                   <p>
                     <strong>2. Abra o arquivo .apk:</strong> Toque em{' '}

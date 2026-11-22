@@ -137,8 +137,8 @@ export const DEFAULT_JOBS: JobPosting[] = [
     roleType: 'auxiliar_logistica',
     department: 'Operações de Armazém',
     location: 'Centro de Distribuição',
-    salaryMonthly: 1800,
-    salaryDisplay: 'R$ 1.800,00 mensais',
+    salaryMonthly: 2210,
+    salaryDisplay: 'R$ 2.210,00 mensais',
     salaryConfirmed: false,
     collectiveAgreementNote:
       'Atenção administrativa: verificar piso salarial regional, convenção coletiva da categoria e jornada aplicável antes da publicação final.',
@@ -177,8 +177,8 @@ export const DEFAULT_JOBS: JobPosting[] = [
     roleType: 'conferente_pacotes',
     department: 'Recebimento e Expedição',
     location: 'Centro de Distribuição',
-    salaryMonthly: 1800,
-    salaryDisplay: 'R$ 1.800,00 mensais',
+    salaryMonthly: 2210,
+    salaryDisplay: 'R$ 2.210,00 mensais',
     salaryConfirmed: false,
     collectiveAgreementNote:
       'Atenção administrativa: verificar piso salarial regional, convenção coletiva da categoria e jornada aplicável antes da publicação final.',
