@@ -21,8 +21,65 @@ import { D1Database, D1PreparedStatement, WorkerEnv } from './d1Types.ts';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const CHUNK_SIZE_BYTES = 192 * 1024; // 192 KB -> ~256 KB base64 (< 2 MB limite por linha do D1)
+const MAX_APK_SIZE_BYTES = 80 * 1024 * 1024; // 80 MB
+const APK_CHUNK_MAX_RAW_BYTES = 512 * 1024; // 512 KB max por slice HTTP (cliente envia 384 KB)
 const SESSION_COOKIE_NAME = 'jsl_session';
 const SESSION_TTL_SECONDS = 8 * 60 * 60; // 8 horas
+const ensuredAppReleaseDbs = new WeakSet<D1Database>();
+
+async function ensureAppReleaseTables(db: D1Database): Promise<void> {
+  if (ensuredAppReleaseDbs.has(db)) return;
+  await db.batch([
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS app_releases (
+        id TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL DEFAULT 'application/vnd.android.package-archive',
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        chunk_count INTEGER NOT NULL,
+        release_notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'archived')),
+        download_count INTEGER NOT NULL DEFAULT 0,
+        uploaded_by_username TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        published_at TEXT
+      )`
+    ),
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_app_releases_status_published
+       ON app_releases(status, published_at DESC, created_at DESC)`
+    ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS app_release_chunks (
+        release_id TEXT NOT NULL REFERENCES app_releases(id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL,
+        data_base64 TEXT NOT NULL,
+        PRIMARY KEY (release_id, chunk_index)
+      )`
+    ),
+  ]);
+  ensuredAppReleaseDbs.add(db);
+}
+
+const initAppReleaseSchema = z.object({
+  fileName: z.string().trim().min(5, 'Nome do arquivo APK inválido.').max(255),
+  fileSize: z
+    .number()
+    .int()
+    .positive('Arquivo vazio.')
+    .max(MAX_APK_SIZE_BYTES, 'Arquivo APK excede o limite máximo de 80 MB.'),
+  version: z
+    .string()
+    .trim()
+    .min(1, 'Informe a versão do aplicativo (ex: 1.0.0).')
+    .max(40, 'Versão muito longa.')
+    .regex(/^[a-zA-Z0-9._+\- ]+$/, 'Use apenas letras, números, ponto, hífen ou + na versão.'),
+  releaseNotes: z.string().trim().max(1000, 'Notas da atualização muito longas.').optional().default(''),
+  totalChunks: z.number().int().min(1).max(300),
+  sha256: z.string().trim().min(16).max(128),
+});
 
 // Hash PBKDF2 dummy válido para mitigar enumeração de usuários por tempo de resposta
 const DUMMY_PBKDF2_HASH =
@@ -1154,6 +1211,132 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
     return jsonResponse({ ok: true }, 201);
   }
 
+  // 7b. Metadados públicos da versão ativa do aplicativo Android (APK)
+  if (method === 'GET' && pathname === '/api/app-release') {
+    await ensureAppReleaseTables(db);
+    const active = await db
+      .prepare(
+        `SELECT id, version, file_name, size_bytes, release_notes, sha256, download_count, published_at
+         FROM app_releases
+         WHERE status = 'active'
+         ORDER BY published_at DESC, created_at DESC
+         LIMIT 1`
+      )
+      .first<{
+        id: string;
+        version: string;
+        file_name: string;
+        size_bytes: number;
+        release_notes: string;
+        sha256: string;
+        download_count: number;
+        published_at: string;
+      }>();
+
+    if (!active) {
+      return jsonResponse({ available: false });
+    }
+
+    return jsonResponse({
+      available: true,
+      release: {
+        id: active.id,
+        version: active.version,
+        fileName: active.file_name,
+        sizeBytes: Number(active.size_bytes),
+        releaseNotes: active.release_notes || '',
+        sha256: active.sha256,
+        downloadCount: Number(active.download_count || 0),
+        publishedAt: active.published_at,
+        downloadUrl: '/api/app-release/download',
+      },
+    });
+  }
+
+  // 7c. Download público em streaming do APK ativo (recomposto por chunks no D1)
+  if (method === 'GET' && pathname === '/api/app-release/download') {
+    await ensureAppReleaseTables(db);
+    const active = await db
+      .prepare(
+        `SELECT id, version, file_name, mime_type, size_bytes, chunk_count
+         FROM app_releases
+         WHERE status = 'active'
+         ORDER BY published_at DESC, created_at DESC
+         LIMIT 1`
+      )
+      .first<{
+        id: string;
+        version: string;
+        file_name: string;
+        mime_type: string;
+        size_bytes: number;
+        chunk_count: number;
+      }>();
+
+    if (!active) {
+      return jsonResponse({ error: 'Aplicativo ainda não publicado para download.' }, 404);
+    }
+
+    await db
+      .prepare('UPDATE app_releases SET download_count = download_count + 1 WHERE id = ?')
+      .bind(active.id)
+      .run();
+
+    const safeVersionSlug = active.version.replace(/[^\w.\-]+/g, '_') || 'atual';
+    const downloadFileName = `JSL-Processo-Seletivo-v${safeVersionSlug}.apk`;
+    const totalChunks = Number(active.chunk_count);
+    let nextChunk = 0;
+    const BATCH_READ = 4;
+
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          if (nextChunk >= totalChunks) {
+            controller.close();
+            return;
+          }
+          const endIdx = nextChunk + BATCH_READ;
+          const res = await db
+            .prepare(
+              `SELECT chunk_index, data_base64
+               FROM app_release_chunks
+               WHERE release_id = ? AND chunk_index >= ? AND chunk_index < ?
+               ORDER BY chunk_index ASC`
+            )
+            .bind(active.id, nextChunk, endIdx)
+            .all<{ chunk_index: number; data_base64: string }>();
+
+          const rows = res.results || [];
+          if (rows.length === 0) {
+            controller.error(new Error('Blocos do arquivo APK não encontrados.'));
+            return;
+          }
+
+          for (const row of rows) {
+            controller.enqueue(base64ToUint8(row.data_base64));
+          }
+          nextChunk += rows.length;
+          if (nextChunk >= totalChunks) {
+            controller.close();
+          }
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'Content-Type': active.mime_type || 'application/vnd.android.package-archive',
+        'Content-Disposition': `attachment; filename="${downloadFileName}"; filename*=UTF-8''${encodeURIComponent(downloadFileName)}`,
+        'Content-Length': String(active.size_bytes),
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   // ======== ROTAS ADMINISTRATIVAS PRIVADAS (ISOLAMENTO ESTRITO POR TENANT) ========
   if (pathname.startsWith('/api/admin/')) {
     const session = await authenticateSession(request, db);
@@ -1750,6 +1933,302 @@ export async function handleApiRequest(request: Request, env: WorkerEnv): Promis
           'Cache-Control': 'no-store',
         },
       });
+    }
+
+    // 13. Gestão exclusiva de versões do aplicativo Android (.apk) — apenas tenant 2
+    if (pathname === '/api/admin/app-release' || pathname.startsWith('/api/admin/app-release/')) {
+      if (session.tenantId !== 2) {
+        return jsonResponse(
+          { error: 'Acesso permitido somente ao administrador autorizado deste módulo.' },
+          403
+        );
+      }
+
+      await ensureAppReleaseTables(db);
+
+      if (method === 'GET' && pathname === '/api/admin/app-release') {
+        const rowsRes = await db
+          .prepare(
+            `SELECT id, version, file_name, size_bytes, sha256, release_notes, status,
+                    download_count, uploaded_by_username, created_at, published_at
+             FROM app_releases
+             WHERE status IN ('active', 'archived')
+             ORDER BY COALESCE(published_at, created_at) DESC
+             LIMIT 15`
+          )
+          .all<{
+            id: string;
+            version: string;
+            file_name: string;
+            size_bytes: number;
+            sha256: string;
+            release_notes: string;
+            status: 'active' | 'archived';
+            download_count: number;
+            uploaded_by_username: string;
+            created_at: string;
+            published_at: string | null;
+          }>();
+
+        const history = (rowsRes.results || []).map((r) => ({
+          id: r.id,
+          version: r.version,
+          fileName: r.file_name,
+          sizeBytes: Number(r.size_bytes),
+          sha256: r.sha256,
+          releaseNotes: r.release_notes || '',
+          status: r.status,
+          downloadCount: Number(r.download_count || 0),
+          uploadedBy: r.uploaded_by_username,
+          createdAt: r.created_at,
+          publishedAt: r.published_at,
+        }));
+
+        const active = history.find((item) => item.status === 'active') || null;
+        return jsonResponse({ active, history });
+      }
+
+      if (method === 'POST' && pathname === '/api/admin/app-release/init') {
+        let rawBody: unknown;
+        try {
+          rawBody = await request.json();
+        } catch {
+          return jsonResponse({ error: 'JSON inválido.' }, 400);
+        }
+
+        const parsed = initAppReleaseSchema.safeParse(rawBody);
+        if (!parsed.success) {
+          return jsonResponse(
+            { error: parsed.error.issues[0]?.message || 'Dados do arquivo APK inválidos.' },
+            400
+          );
+        }
+
+        const safeName = sanitizeFileName(parsed.data.fileName);
+        if (!safeName.toLowerCase().endsWith('.apk')) {
+          return jsonResponse(
+            { error: 'Formato inválido. Selecione um arquivo com extensão .apk.' },
+            400
+          );
+        }
+
+        const releaseId = crypto.randomUUID();
+        const nowIso = new Date().toISOString();
+
+        await db
+          .prepare(
+            `INSERT INTO app_releases (
+              id, version, file_name, mime_type, size_bytes, sha256, chunk_count,
+              release_notes, status, download_count, uploaded_by_username, created_at, published_at
+            ) VALUES (?, ?, ?, 'application/vnd.android.package-archive', ?, ?, ?, ?, 'pending', 0, ?, ?, NULL)`
+          )
+          .bind(
+            releaseId,
+            parsed.data.version,
+            safeName,
+            parsed.data.fileSize,
+            parsed.data.sha256,
+            parsed.data.totalChunks,
+            parsed.data.releaseNotes || '',
+            session.username,
+            nowIso
+          )
+          .run();
+
+        return jsonResponse({ releaseId }, 201);
+      }
+
+      if (method === 'POST' && pathname === '/api/admin/app-release/chunk') {
+        const releaseId = (url.searchParams.get('releaseId') || '').trim();
+        const indexRaw = url.searchParams.get('index');
+        const chunkIndex = indexRaw !== null ? Number(indexRaw) : NaN;
+
+        if (!/^[a-zA-Z0-9-]+$/.test(releaseId) || !Number.isInteger(chunkIndex) || chunkIndex < 0) {
+          return jsonResponse({ error: 'Parâmetros de bloco inválidos.' }, 400);
+        }
+
+        const rel = await db
+          .prepare(
+            `SELECT id, chunk_count, status, uploaded_by_username
+             FROM app_releases
+             WHERE id = ?`
+          )
+          .bind(releaseId)
+          .first<{
+            id: string;
+            chunk_count: number;
+            status: string;
+            uploaded_by_username: string;
+          }>();
+
+        if (!rel || rel.status !== 'pending' || rel.uploaded_by_username !== session.username) {
+          return jsonResponse({ error: 'Envio de APK não encontrado ou já encerrado.' }, 404);
+        }
+        if (chunkIndex >= Number(rel.chunk_count)) {
+          return jsonResponse({ error: 'Índice do bloco fora do esperado.' }, 400);
+        }
+
+        const bytes = new Uint8Array(await request.arrayBuffer());
+        if (bytes.length <= 0 || bytes.length > APK_CHUNK_MAX_RAW_BYTES) {
+          return jsonResponse({ error: 'Tamanho de bloco inválido.' }, 400);
+        }
+
+        // APK é um pacote ZIP: todo APK válido inicia com PK\x03\x04
+        if (chunkIndex === 0) {
+          const hasZipSignature =
+            bytes.length >= 4 &&
+            bytes[0] === 0x50 &&
+            bytes[1] === 0x4b &&
+            bytes[2] === 0x03 &&
+            bytes[3] === 0x04;
+          if (!hasZipSignature) {
+            await db.prepare('DELETE FROM app_releases WHERE id = ?').bind(releaseId).run();
+            return jsonResponse(
+              { error: 'Arquivo inválido. O arquivo enviado não é um pacote Android (.apk) válido.' },
+              400
+            );
+          }
+        }
+
+        const dataBase64 = uint8ToBase64(bytes);
+        await db
+          .prepare(
+            'INSERT OR REPLACE INTO app_release_chunks (release_id, chunk_index, data_base64) VALUES (?, ?, ?)'
+          )
+          .bind(releaseId, chunkIndex, dataBase64)
+          .run();
+
+        return jsonResponse({ ok: true, index: chunkIndex });
+      }
+
+      if (method === 'POST' && pathname === '/api/admin/app-release/commit') {
+        let rawBody: unknown;
+        try {
+          rawBody = await request.json();
+        } catch {
+          return jsonResponse({ error: 'JSON inválido.' }, 400);
+        }
+
+        const releaseId =
+          typeof (rawBody as { releaseId?: unknown })?.releaseId === 'string'
+            ? (rawBody as { releaseId: string }).releaseId.trim()
+            : '';
+
+        if (!/^[a-zA-Z0-9-]+$/.test(releaseId)) {
+          return jsonResponse({ error: 'Identificador de envio inválido.' }, 400);
+        }
+
+        const rel = await db
+          .prepare(
+            `SELECT id, version, file_name, size_bytes, sha256, chunk_count, release_notes, status
+             FROM app_releases
+             WHERE id = ?`
+          )
+          .bind(releaseId)
+          .first<{
+            id: string;
+            version: string;
+            file_name: string;
+            size_bytes: number;
+            sha256: string;
+            chunk_count: number;
+            release_notes: string;
+            status: string;
+          }>();
+
+        if (!rel || rel.status !== 'pending') {
+          return jsonResponse({ error: 'Lançamento pendente não localizado.' }, 404);
+        }
+
+        const countRow = await db
+          .prepare('SELECT COUNT(*) AS cnt FROM app_release_chunks WHERE release_id = ?')
+          .bind(releaseId)
+          .first<{ cnt: number }>();
+
+        if (Number(countRow?.cnt ?? 0) !== Number(rel.chunk_count)) {
+          return jsonResponse(
+            { error: 'Upload incompleto. Nem todas as partes do APK foram recebidas.' },
+            400
+          );
+        }
+
+        const nowIso = new Date().toISOString();
+        await db.batch([
+          db
+            .prepare("UPDATE app_releases SET status = 'archived' WHERE status = 'active' AND id != ?")
+            .bind(releaseId),
+          db
+            .prepare("UPDATE app_releases SET status = 'active', published_at = ? WHERE id = ?")
+            .bind(nowIso, releaseId),
+          db
+            .prepare("DELETE FROM app_releases WHERE status = 'pending' AND id != ?")
+            .bind(releaseId),
+          db
+            .prepare(
+              'INSERT INTO audit_logs (id, tenant_id, actor_username, action, target_type, target_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            )
+            .bind(
+              crypto.randomUUID(),
+              session.tenantId,
+              session.username,
+              'PUBLISH_APP_RELEASE',
+              'app_release',
+              releaseId,
+              `Nova versão v${rel.version} (${rel.file_name}) publicada para download público.`,
+              nowIso
+            ),
+        ]);
+
+        return jsonResponse({
+          release: {
+            id: rel.id,
+            version: rel.version,
+            fileName: rel.file_name,
+            sizeBytes: Number(rel.size_bytes),
+            sha256: rel.sha256,
+            releaseNotes: rel.release_notes || '',
+            status: 'active',
+            downloadCount: 0,
+            uploadedBy: session.username,
+            publishedAt: nowIso,
+          },
+        });
+      }
+
+      const deleteReleaseMatch = pathname.match(/^\/api\/admin\/app-release\/([a-zA-Z0-9-]+)$/);
+      if (method === 'DELETE' && deleteReleaseMatch) {
+        const releaseId = deleteReleaseMatch[1];
+        const existing = await db
+          .prepare('SELECT id, version, file_name FROM app_releases WHERE id = ?')
+          .bind(releaseId)
+          .first<{ id: string; version: string; file_name: string }>();
+
+        if (!existing) {
+          return jsonResponse({ error: 'Versão não encontrada.' }, 404);
+        }
+
+        const nowIso = new Date().toISOString();
+        await db.batch([
+          db.prepare('DELETE FROM app_release_chunks WHERE release_id = ?').bind(releaseId),
+          db.prepare('DELETE FROM app_releases WHERE id = ?').bind(releaseId),
+          db
+            .prepare(
+              'INSERT INTO audit_logs (id, tenant_id, actor_username, action, target_type, target_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            )
+            .bind(
+              crypto.randomUUID(),
+              session.tenantId,
+              session.username,
+              'DELETE_APP_RELEASE',
+              'app_release',
+              releaseId,
+              `Versão v${existing.version} (${existing.file_name}) removida pelo painel.`,
+              nowIso
+            ),
+        ]);
+
+        return jsonResponse({ ok: true, deletedId: releaseId });
+      }
     }
   }
 

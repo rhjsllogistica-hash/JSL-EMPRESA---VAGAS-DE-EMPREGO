@@ -1617,6 +1617,279 @@ test('GET /api/applications/status identifies submitted IP per channel without l
   assert.equal(afterDelData.submitted, false);
 });
 
+function makeFakeApkBytes(totalSize: number, fillByte: number): Uint8Array<ArrayBuffer> {
+  const buf = new ArrayBuffer(totalSize);
+  const out = new Uint8Array(buf);
+  // ZIP/APK magic header PK\x03\x04
+  out[0] = 0x50;
+  out[1] = 0x4b;
+  out[2] = 0x03;
+  out[3] = 0x04;
+  for (let i = 4; i < totalSize; i++) {
+    out[i] = (fillByte + i) % 256;
+  }
+  return out;
+}
+
+test('APK upload & public streaming download are restricted to tenant 2, validate APK signature, and update active version automatically', async () => {
+  const db = await setupTestDb();
+
+  // Antes da publicação -> available: false e download 404
+  const initialMetaRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/app-release`),
+    { DB: db }
+  );
+  assert.equal(initialMetaRes.status, 200);
+  const initialMeta = (await initialMetaRes.json()) as { available: boolean };
+  assert.equal(initialMeta.available, false);
+
+  const initialDownloadRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/app-release/download`),
+    { DB: db }
+  );
+  assert.equal(initialDownloadRes.status, 404);
+
+  // Tenant 1 (recruiter1) não tem permissão para gerenciar APK -> 403
+  const cookie1 = await loginAs(db, 'recruiter1', 'test_pass_tenant1', '198.51.100.252');
+  const tenant1Get = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release`, { headers: { Cookie: cookie1 } }),
+    { DB: db }
+  );
+  assert.equal(tenant1Get.status, 403);
+
+  const tenant1Init = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        Cookie: cookie1,
+      },
+      body: JSON.stringify({
+        fileName: 'jsl.apk',
+        fileSize: 1024,
+        version: '1.0.0',
+        releaseNotes: '',
+        totalChunks: 1,
+        sha256: 'a'.repeat(64),
+      }),
+    }),
+    { DB: db }
+  );
+  assert.equal(tenant1Init.status, 403);
+
+  // Tenant 2 (recruiter2) autorizado
+  const cookie2 = await loginAs(db, 'recruiter2', 'test_pass_tenant2', '198.51.100.253');
+
+  // Rejeita arquivo com extensão .apk mas sem assinatura PK\x03\x04
+  const badInitRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: JSON.stringify({
+        fileName: 'falso.apk',
+        fileSize: 32,
+        version: '0.0.1',
+        releaseNotes: 'Teste inválido',
+        totalChunks: 1,
+        sha256: 'b'.repeat(64),
+      }),
+    }),
+    { DB: db }
+  );
+  assert.equal(badInitRes.status, 201);
+  const { releaseId: badReleaseId } = (await badInitRes.json()) as { releaseId: string };
+
+  const badBytes = new TextEncoder().encode('NAO_E_UM_ARQUIVO_APK_VALIDO_1234');
+  const badChunkRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/chunk?releaseId=${badReleaseId}&index=0`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: badBytes,
+    }),
+    { DB: db }
+  );
+  assert.equal(badChunkRes.status, 400);
+
+  // Upload multi-chunk v1.0.0 (2 chunks de 384 KB + 100 KB = ~484 KB)
+  const chunkSize = 384 * 1024;
+  const apkV1 = makeFakeApkBytes(chunkSize + 100 * 1024, 17);
+  const shaV1 = await sha256Hex(apkV1);
+
+  const initV1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: JSON.stringify({
+        fileName: 'jsl-processo-seletivo.apk',
+        fileSize: apkV1.length,
+        version: '1.0.0',
+        releaseNotes: 'Versão inicial para candidatos.',
+        totalChunks: 2,
+        sha256: shaV1,
+      }),
+    }),
+    { DB: db }
+  );
+  assert.equal(initV1.status, 201);
+  const { releaseId: relIdV1 } = (await initV1.json()) as { releaseId: string };
+
+  for (let i = 0; i < 2; i++) {
+    const slice = apkV1.slice(i * chunkSize, Math.min(apkV1.length, (i + 1) * chunkSize));
+    const cRes = await handleApiRequest(
+      new Request(`${ORIGIN}/api/admin/app-release/chunk?releaseId=${relIdV1}&index=${i}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          Origin: ORIGIN,
+          Cookie: cookie2,
+        },
+        body: slice,
+      }),
+      { DB: db }
+    );
+    assert.equal(cRes.status, 200);
+  }
+
+  const commitV1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/commit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: JSON.stringify({ releaseId: relIdV1 }),
+    }),
+    { DB: db }
+  );
+  assert.equal(commitV1.status, 200);
+
+  // Endpoint público reflete v1.0.0 imediatamente
+  const pubMeta1 = await handleApiRequest(new Request(`${ORIGIN}/api/app-release`), { DB: db });
+  assert.equal(pubMeta1.status, 200);
+  const pubData1 = (await pubMeta1.json()) as {
+    available: boolean;
+    release?: { version: string; sizeBytes: number; downloadCount: number };
+  };
+  assert.equal(pubData1.available, true);
+  assert.equal(pubData1.release?.version, '1.0.0');
+  assert.equal(pubData1.release?.sizeBytes, apkV1.length);
+
+  // Download em streaming recompõe exatamente os bytes de v1.0.0 e incrementa downloadCount
+  const dl1 = await handleApiRequest(new Request(`${ORIGIN}/api/app-release/download`), { DB: db });
+  assert.equal(dl1.status, 200);
+  assert.equal(dl1.headers.get('content-type'), 'application/vnd.android.package-archive');
+  const dl1Bytes = new Uint8Array(await dl1.arrayBuffer());
+  assert.equal(dl1Bytes.length, apkV1.length);
+  assert.equal(await sha256Hex(dl1Bytes), shaV1);
+
+  // Sobe v2.0.0 -> substitui automaticamente a versão pública ativa
+  const apkV2 = makeFakeApkBytes(64 * 1024, 91);
+  const shaV2 = await sha256Hex(apkV2);
+
+  const initV2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: JSON.stringify({
+        fileName: 'jsl-processo-seletivo-v2.apk',
+        fileSize: apkV2.length,
+        version: '2.0.0',
+        releaseNotes: 'Atualização automática v2.0.0.',
+        totalChunks: 1,
+        sha256: shaV2,
+      }),
+    }),
+    { DB: db }
+  );
+  assert.equal(initV2.status, 201);
+  const { releaseId: relIdV2 } = (await initV2.json()) as { releaseId: string };
+
+  const chunkV2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/chunk?releaseId=${relIdV2}&index=0`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: apkV2,
+    }),
+    { DB: db }
+  );
+  assert.equal(chunkV2.status, 200);
+
+  const commitV2 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/commit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        Cookie: cookie2,
+      },
+      body: JSON.stringify({ releaseId: relIdV2 }),
+    }),
+    { DB: db }
+  );
+  assert.equal(commitV2.status, 200);
+
+  const pubMeta2 = await handleApiRequest(new Request(`${ORIGIN}/api/app-release`), { DB: db });
+  const pubData2 = (await pubMeta2.json()) as {
+    available: boolean;
+    release?: { version: string };
+  };
+  assert.equal(pubData2.release?.version, '2.0.0');
+
+  const dl2 = await handleApiRequest(new Request(`${ORIGIN}/api/app-release/download`), { DB: db });
+  assert.equal(dl2.status, 200);
+  const dl2Bytes = new Uint8Array(await dl2.arrayBuffer());
+  assert.equal(await sha256Hex(dl2Bytes), shaV2);
+
+  // Admin lista histórico e vê v2 ativo e v1 arquivado com downloadCount = 1
+  const adminHistRes = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release`, { headers: { Cookie: cookie2 } }),
+    { DB: db }
+  );
+  assert.equal(adminHistRes.status, 200);
+  const adminHist = (await adminHistRes.json()) as {
+    active: { version: string; downloadCount: number } | null;
+    history: Array<{ id: string; version: string; status: string; downloadCount: number }>;
+  };
+  assert.equal(adminHist.active?.version, '2.0.0');
+  assert.equal(adminHist.active?.downloadCount, 1);
+  const archivedV1 = adminHist.history.find((h) => h.version === '1.0.0');
+  assert.equal(archivedV1?.status, 'archived');
+  assert.equal(archivedV1?.downloadCount, 1);
+
+  // Excluir versão arquivada v1.0.0
+  const delV1 = await handleApiRequest(
+    new Request(`${ORIGIN}/api/admin/app-release/${relIdV1}`, {
+      method: 'DELETE',
+      headers: { Origin: ORIGIN, Cookie: cookie2 },
+    }),
+    { DB: db }
+  );
+  assert.equal(delV1.status, 200);
+});
+
+
 
 
 

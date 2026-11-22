@@ -389,3 +389,196 @@ export function buildAdminExportUrl(
   sp.set('scope', scope);
   return `/api/admin/export?${sp.toString()}`;
 }
+
+export interface PublicAppRelease {
+  id: string;
+  version: string;
+  fileName: string;
+  sizeBytes: number;
+  releaseNotes: string;
+  sha256: string;
+  downloadCount: number;
+  publishedAt: string;
+  downloadUrl: string;
+}
+
+export interface PublicAppReleaseResponse {
+  available: boolean;
+  release?: PublicAppRelease;
+}
+
+export interface AdminAppReleaseItem {
+  id: string;
+  version: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  releaseNotes: string;
+  status: 'active' | 'archived';
+  downloadCount: number;
+  uploadedBy: string;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface AdminAppReleaseListResponse {
+  active: AdminAppReleaseItem | null;
+  history: AdminAppReleaseItem[];
+}
+
+export interface ApkUploadProgress {
+  phase: 'hashing' | 'uploading' | 'committing';
+  currentChunk: number;
+  totalChunks: number;
+  percent: number;
+}
+
+export async function fetchPublicAppRelease(): Promise<PublicAppReleaseResponse> {
+  const res = await fetch('/api/app-release', {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    return { available: false };
+  }
+  return res.json();
+}
+
+export async function fetchAdminAppReleases(): Promise<AdminAppReleaseListResponse> {
+  const res = await fetch('/api/admin/app-release', {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    throw new Error(await parseErrorResponse(res, 'Erro ao carregar versões do aplicativo.'));
+  }
+  return res.json();
+}
+
+export async function deleteAdminAppRelease(releaseId: string): Promise<void> {
+  const res = await fetch(`/api/admin/app-release/${encodeURIComponent(releaseId)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    throw new Error(await parseErrorResponse(res, 'Erro ao excluir versão do aplicativo.'));
+  }
+}
+
+const APK_UPLOAD_CHUNK_BYTES = 384 * 1024; // 384 KB por bloco (~512 KB base64)
+
+async function computeFileSha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  const bytes = new Uint8Array(digest);
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+export async function uploadAndPublishApk(params: {
+  file: File;
+  version: string;
+  releaseNotes?: string;
+  onProgress?: (progress: ApkUploadProgress) => void;
+}): Promise<AdminAppReleaseItem> {
+  const { file, version, releaseNotes = '', onProgress } = params;
+
+  if (!file.name.toLowerCase().endsWith('.apk')) {
+    throw new Error('Selecione um arquivo válido com extensão .apk.');
+  }
+  if (file.size <= 0) {
+    throw new Error('O arquivo selecionado está vazio.');
+  }
+  if (file.size > 80 * 1024 * 1024) {
+    throw new Error('O arquivo APK excede o limite máximo de 80 MB.');
+  }
+
+  const totalChunks = Math.max(1, Math.ceil(file.size / APK_UPLOAD_CHUNK_BYTES));
+  onProgress?.({ phase: 'hashing', currentChunk: 0, totalChunks, percent: 2 });
+
+  const fullBuffer = await file.arrayBuffer();
+  const header = new Uint8Array(fullBuffer.slice(0, 4));
+  if (
+    header.length < 4 ||
+    header[0] !== 0x50 ||
+    header[1] !== 0x4b ||
+    header[2] !== 0x03 ||
+    header[3] !== 0x04
+  ) {
+    throw new Error('Arquivo inválido. O arquivo selecionado não possui assinatura Android (.apk).');
+  }
+
+  const sha256 = await computeFileSha256Hex(fullBuffer);
+
+  const initRes = await fetch('/api/admin/app-release/init', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileName: file.name,
+      fileSize: file.size,
+      version: version.trim(),
+      releaseNotes: releaseNotes.trim(),
+      totalChunks,
+      sha256,
+    }),
+  });
+
+  if (!initRes.ok) {
+    throw new Error(await parseErrorResponse(initRes, 'Não foi possível iniciar o envio do APK.'));
+  }
+
+  const { releaseId } = (await initRes.json()) as { releaseId: string };
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * APK_UPLOAD_CHUNK_BYTES;
+    const end = Math.min(file.size, start + APK_UPLOAD_CHUNK_BYTES);
+    const slice = fullBuffer.slice(start, end);
+
+    const chunkRes = await fetch(
+      `/api/admin/app-release/chunk?releaseId=${encodeURIComponent(releaseId)}&index=${i}`,
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: slice,
+      }
+    );
+
+    if (!chunkRes.ok) {
+      throw new Error(
+        await parseErrorResponse(
+          chunkRes,
+          `Falha ao enviar a parte ${i + 1} de ${totalChunks} do APK.`
+        )
+      );
+    }
+
+    const percent = Math.min(95, Math.round(((i + 1) / totalChunks) * 90) + 5);
+    onProgress?.({ phase: 'uploading', currentChunk: i + 1, totalChunks, percent });
+  }
+
+  onProgress?.({ phase: 'committing', currentChunk: totalChunks, totalChunks, percent: 97 });
+
+  const commitRes = await fetch('/api/admin/app-release/commit', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ releaseId }),
+  });
+
+  if (!commitRes.ok) {
+    throw new Error(
+      await parseErrorResponse(commitRes, 'Falha ao publicar a nova versão do aplicativo.')
+    );
+  }
+
+  const data = (await commitRes.json()) as { release: AdminAppReleaseItem };
+  onProgress?.({ phase: 'committing', currentChunk: totalChunks, totalChunks, percent: 100 });
+  return data.release;
+}
+

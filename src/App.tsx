@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
+import { AppDownloadPage } from './components/AppDownloadPage.tsx';
 import { ApplicationWizard } from './components/ApplicationWizard.tsx';
 import { ConfirmationPage, ConfirmationReceipt } from './components/ConfirmationPage.tsx';
 import { Footer } from './components/Footer.tsx';
@@ -47,7 +48,7 @@ export default function App() {
   const parsed = parseAppLocation(pathname);
 
   const [checkingIpStatus, setCheckingIpStatus] = useState<boolean>(
-    () => parsed.route !== '/painel'
+    () => parsed.route !== '/painel' && parsed.route !== '/aplicativo'
   );
   const [savedDraft, setSavedDraft] = useState<SavedApplicationDraft | null>(() =>
     loadApplicationDraft(parsed.channelPrefix)
@@ -91,7 +92,7 @@ export default function App() {
 
   // Ao abrir o app (rotas públicas), verifica no servidor se este IP já enviou candidatura neste canal
   useEffect(() => {
-    if (parsed.route === '/painel') {
+    if (parsed.route === '/painel' || parsed.route === '/aplicativo') {
       setCheckingIpStatus(false);
       return;
     }
@@ -111,6 +112,7 @@ export default function App() {
             parsed.route !== '/privacidade' &&
             parsed.route !== '/termos' &&
             parsed.route !== '/contato' &&
+            parsed.route !== '/aplicativo' &&
             parsed.route !== '/confirmacao'
           ) {
             replaceRoute('/confirmacao');
@@ -157,11 +159,12 @@ export default function App() {
 
   // Se o candidato já tem candidatura registrada por este IP, garante que páginas públicas principais levem à confirmação
   useEffect(() => {
-    if (!lockedByIp || parsed.route === '/painel') return;
+    if (!lockedByIp || parsed.route === '/painel' || parsed.route === '/aplicativo') return;
     if (
       parsed.route !== '/privacidade' &&
       parsed.route !== '/termos' &&
       parsed.route !== '/contato' &&
+      parsed.route !== '/aplicativo' &&
       parsed.route !== '/confirmacao'
     ) {
       replaceRoute('/confirmacao');
@@ -213,6 +216,10 @@ export default function App() {
 
     if (route === '/painel') {
       return <AdminDashboard onNavigate={navigateRoute} />;
+    }
+
+    if (route === '/aplicativo') {
+      return <AppDownloadPage channelPrefix={parsed.channelPrefix} onNavigate={navigateRoute} />;
     }
 
     if (
@@ -321,7 +328,8 @@ export default function App() {
     !checkingIpStatus &&
     Boolean(savedDraft && draftJob) &&
     parsed.route !== '/candidatura' &&
-    parsed.route !== '/confirmacao';
+    parsed.route !== '/confirmacao' &&
+    parsed.route !== '/aplicativo';
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50 text-zinc-900">

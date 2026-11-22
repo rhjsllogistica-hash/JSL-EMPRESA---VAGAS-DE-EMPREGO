@@ -16,6 +16,7 @@ export function Header({ currentRoute, channelPrefix, brandName, onNavigate }: H
     { label: 'Início', route: '/' },
     { label: 'Vagas disponíveis', route: '/vagas' },
     { label: 'Como funciona', route: '/#como-funciona' },
+    { label: 'Aplicativo', route: '/aplicativo' },
     { label: 'Contato', route: '/contato' },
   ];
 

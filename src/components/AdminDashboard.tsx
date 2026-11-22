@@ -17,7 +17,9 @@ import {
   MessageCircle,
   RefreshCw,
   Search,
+  Smartphone,
   Trash2,
+  UploadCloud,
   X,
 } from 'lucide-react';
 import { DEFAULT_JOBS } from '../data/defaultJobs.ts';
@@ -25,17 +27,22 @@ import { formatDateTimeSaoPaulo, getSaoPauloTodayYmd } from '../lib/channelRouti
 import {
   AdminApplicationDetailResponse,
   AdminApplicationListResponse,
+  AdminAppReleaseListResponse,
   AdminFilterParams,
   adminLogin,
   adminLogout,
   AdminUserSession,
+  ApkUploadProgress,
   buildAdminExportUrl,
   deleteAdminApplication,
+  deleteAdminAppRelease,
   downloadAdminAttachment,
   fetchAdminApplicationDetail,
   fetchAdminApplications,
+  fetchAdminAppReleases,
   fetchAdminSession,
   updateAdminApplication,
+  uploadAndPublishApk,
 } from '../lib/recruitmentService.ts';
 import { APPLICATION_STATUSES, ApplicationStatus } from '../types/recruitment.ts';
 
@@ -134,6 +141,20 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [deletingApplication, setDeletingApplication] = useState(false);
   const [deleteFeedback, setDeleteFeedback] = useState('');
 
+  // Tab & APK management (exclusivo tenant 2)
+  const [activeTab, setActiveTab] = useState<'applications' | 'app-release'>('applications');
+  const [appReleasesData, setAppReleasesData] = useState<AdminAppReleaseListResponse | null>(null);
+  const [loadingAppReleases, setLoadingAppReleases] = useState(false);
+  const [appReleaseError, setAppReleaseError] = useState('');
+  const [appReleaseSuccess, setAppReleaseSuccess] = useState('');
+  const [apkFile, setApkFile] = useState<File | null>(null);
+  const [apkVersion, setApkVersion] = useState('1.0.0');
+  const [apkNotes, setApkNotes] = useState('');
+  const [uploadingApk, setUploadingApk] = useState(false);
+  const [apkProgress, setApkProgress] = useState<ApkUploadProgress | null>(null);
+  const [copiedAppLink, setCopiedAppLink] = useState(false);
+  const [deletingReleaseId, setDeletingReleaseId] = useState<string | null>(null);
+
   useEffect(() => {
     let active = true;
     fetchAdminSession()
@@ -196,11 +217,38 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
   }, [session, searchApplied, statusFilter, jobFilter, dateFrom, dateTo, page, pageSize]);
 
+  const loadAppReleases = useCallback(async () => {
+    if (!session || session.tenantId !== 2) return;
+    setLoadingAppReleases(true);
+    setAppReleaseError('');
+    try {
+      const data = await fetchAdminAppReleases();
+      setAppReleasesData(data);
+      if (data.active?.version) {
+        const match = data.active.version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+        if (match) {
+          setApkVersion(`${match[1]}.${match[2]}.${Number(match[3]) + 1}`);
+        }
+      }
+    } catch (err) {
+      setAppReleaseError(
+        err instanceof Error ? err.message : 'Erro ao carregar versões do aplicativo.'
+      );
+    } finally {
+      setLoadingAppReleases(false);
+    }
+  }, [session]);
+
   useEffect(() => {
     if (session) {
       loadApplications();
+      if (session.tenantId === 2) {
+        loadAppReleases();
+      } else {
+        setActiveTab('applications');
+      }
     }
-  }, [session, loadApplications]);
+  }, [session, loadApplications, loadAppReleases]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -209,6 +257,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     try {
       const user = await adminLogin(username.trim(), password);
       setSession(user);
+      setActiveTab('applications');
       setPassword('');
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Usuário ou senha inválidos.');
@@ -220,7 +269,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const handleLogout = async () => {
     await adminLogout();
     setSession(null);
+    setActiveTab('applications');
     setListData(null);
+    setAppReleasesData(null);
     setSelectedId(null);
     setDetailData(null);
   };
@@ -234,6 +285,73 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       setTimeout(() => setCopiedChannel(false), 2500);
     } catch {
       setCopiedChannel(false);
+    }
+  };
+
+  const handleCopyAppDownloadLink = async () => {
+    const fullUrl = `${window.location.origin}/aplicativo`;
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      setCopiedAppLink(true);
+      setTimeout(() => setCopiedAppLink(false), 2500);
+    } catch {
+      setCopiedAppLink(false);
+    }
+  };
+
+  const handleUploadApkSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!apkFile) {
+      setAppReleaseError('Selecione o arquivo .apk do aplicativo antes de salvar.');
+      return;
+    }
+    if (!apkVersion.trim()) {
+      setAppReleaseError('Informe o número da versão (ex: 1.0.1).');
+      return;
+    }
+
+    setUploadingApk(true);
+    setAppReleaseError('');
+    setAppReleaseSuccess('');
+    setApkProgress(null);
+
+    try {
+      const published = await uploadAndPublishApk({
+        file: apkFile,
+        version: apkVersion.trim(),
+        releaseNotes: apkNotes.trim(),
+        onProgress: setApkProgress,
+      });
+      setApkFile(null);
+      setApkNotes('');
+      setAppReleaseSuccess(
+        `Versão v${published.version} (${published.fileName}) salva e publicada! Quem abrir /aplicativo já baixa este novo APK.`
+      );
+      await loadAppReleases();
+    } catch (err) {
+      setAppReleaseError(
+        err instanceof Error ? err.message : 'Não foi possível enviar o arquivo APK.'
+      );
+    } finally {
+      setUploadingApk(false);
+      setApkProgress(null);
+    }
+  };
+
+  const handleDeleteAppRelease = async (releaseId: string) => {
+    setDeletingReleaseId(releaseId);
+    setAppReleaseError('');
+    setAppReleaseSuccess('');
+    try {
+      await deleteAdminAppRelease(releaseId);
+      setAppReleaseSuccess('Versão removida do histórico.');
+      await loadAppReleases();
+    } catch (err) {
+      setAppReleaseError(
+        err instanceof Error ? err.message : 'Erro ao remover versão do aplicativo.'
+      );
+    } finally {
+      setDeletingReleaseId(null);
     }
   };
 
@@ -502,11 +620,44 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
           </div>
 
-          <nav aria-label="Navegação administrativa" className="space-y-1">
-            <div className="flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold text-white bg-zinc-800 rounded-xl border border-zinc-700">
-              <LayoutDashboard className="w-4 h-4 text-[#C8102E]" aria-hidden="true" />
+          <nav aria-label="Navegação administrativa" className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab('applications')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold rounded-xl border transition-colors cursor-pointer ${
+                activeTab === 'applications'
+                  ? 'text-white bg-zinc-800 border-zinc-700'
+                  : 'text-zinc-300 border-transparent hover:bg-zinc-800/60 hover:text-white'
+              }`}
+            >
+              <LayoutDashboard
+                className={`w-4 h-4 ${
+                  activeTab === 'applications' ? 'text-[#C8102E]' : 'text-zinc-400'
+                }`}
+                aria-hidden="true"
+              />
               <span>Candidaturas do Canal</span>
-            </div>
+            </button>
+
+            {session.tenantId === 2 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('app-release')}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold rounded-xl border transition-colors cursor-pointer ${
+                  activeTab === 'app-release'
+                    ? 'text-white bg-zinc-800 border-zinc-700'
+                    : 'text-zinc-300 border-transparent hover:bg-zinc-800/60 hover:text-white'
+                }`}
+              >
+                <Smartphone
+                  className={`w-4 h-4 ${
+                    activeTab === 'app-release' ? 'text-[#C8102E]' : 'text-zinc-400'
+                  }`}
+                  aria-hidden="true"
+                />
+                <span>Aplicativo (APK)</span>
+              </button>
+            )}
           </nav>
         </div>
 
@@ -524,11 +675,350 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       {/* Conteúdo Principal */}
       <div className="flex-1 p-4 sm:p-8 max-w-[1360px] w-full space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
-              Candidaturas recebidas ({session.channelPath})
-            </h1>
+        {session.tenantId === 2 && activeTab === 'app-release' ? (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
+                  Aplicativo Android — JSL - Processo seletivo
+                </h1>
+                <p className="text-sm text-zinc-600">
+                  Suba uma nova versão do arquivo .apk e atualize automaticamente o link público de
+                  download para os candidatos.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyAppDownloadLink}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl cursor-pointer"
+                >
+                  {copiedAppLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+                      Link /aplicativo copiado
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                      Copiar link /aplicativo
+                    </>
+                  )}
+                </button>
+                <a
+                  href="/aplicativo"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-zinc-800 bg-white border border-zinc-300 hover:border-zinc-400 rounded-xl"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                  Abrir página do app
+                </a>
+              </div>
+            </div>
+
+            {appReleaseError && (
+              <div
+                role="alert"
+                className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-900"
+              >
+                {appReleaseError}
+              </div>
+            )}
+
+            {appReleaseSuccess && (
+              <div
+                role="status"
+                className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-sm text-emerald-950 font-medium"
+              >
+                {appReleaseSuccess}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Versão ativa no momento */}
+              <div className="lg:col-span-5 bg-white border border-zinc-200 rounded-2xl p-6 space-y-5">
+                <div className="flex items-center gap-4">
+                  <img
+                    src="/assets/aistudio/Emblema_JSL_Log_stica__Processo_Seletivo_d80f5c2b.png"
+                    alt="Ícone JSL - Processo seletivo"
+                    referrerPolicy="no-referrer"
+                    className="w-16 h-16 rounded-2xl border border-zinc-200 object-cover shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-500">Versão ativa no site</p>
+                    <h2 className="font-display text-lg font-extrabold text-zinc-950 truncate">
+                      JSL - Processo seletivo
+                    </h2>
+                    <p className="text-xs text-zinc-500 truncate">
+                      {window.location.origin}/aplicativo
+                    </p>
+                  </div>
+                </div>
+
+                {loadingAppReleases ? (
+                  <p className="text-sm text-zinc-500 py-4">Verificando versão publicada...</p>
+                ) : appReleasesData?.active ? (
+                  <dl className="space-y-2.5 text-sm border-t border-zinc-100 pt-4">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">Versão publicada</dt>
+                      <dd className="font-bold text-[#01875F] tabular-nums">
+                        v{appReleasesData.active.version}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">Arquivo</dt>
+                      <dd className="font-medium text-zinc-900 truncate max-w-[200px]">
+                        {appReleasesData.active.fileName}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">Tamanho</dt>
+                      <dd className="font-medium text-zinc-900 tabular-nums">
+                        {(appReleasesData.active.sizeBytes / (1024 * 1024))
+                          .toFixed(2)
+                          .replace('.', ',')}{' '}
+                        MB
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">Downloads realizados</dt>
+                      <dd className="font-bold text-zinc-950 tabular-nums">
+                        {appReleasesData.active.downloadCount}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">Atualizado em (SP)</dt>
+                      <dd className="font-medium text-zinc-900 tabular-nums">
+                        {formatDateTimeSaoPaulo(
+                          appReleasesData.active.publishedAt || appReleasesData.active.createdAt
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <div className="border border-dashed border-zinc-300 rounded-xl p-4 text-xs text-zinc-600">
+                    Nenhum arquivo APK foi publicado ainda. Suba o primeiro APK no formulário ao
+                    lado para ativar o botão de download em <strong>/aplicativo</strong>.
+                  </div>
+                )}
+
+                {appReleasesData?.active && (
+                  <a
+                    href="/api/app-release/download"
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-900 bg-zinc-100 hover:bg-zinc-200 rounded-xl"
+                  >
+                    <Download className="w-4 h-4" aria-hidden="true" />
+                    Testar download do APK ativo
+                  </a>
+                )}
+              </div>
+
+              {/* Formulário de Upload de Novo APK */}
+              <form
+                onSubmit={handleUploadApkSubmit}
+                className="lg:col-span-7 bg-white border border-zinc-200 rounded-2xl p-6 space-y-5"
+              >
+                <div>
+                  <h2 className="font-display text-lg font-extrabold text-zinc-950">
+                    Subir nova versão do aplicativo (.apk)
+                  </h2>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Ao clicar em &ldquo;Salvar novo APK&rdquo;, a versão anterior é arquivada e os
+                    clientes baixam a nova versão automaticamente.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-800 mb-2">
+                    Arquivo Android (.apk) — até 80 MB
+                  </label>
+                  <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-300 hover:border-[#C8102E] rounded-2xl p-6 text-center cursor-pointer transition-colors bg-neutral-50">
+                    <UploadCloud className="w-8 h-8 text-[#C8102E]" aria-hidden="true" />
+                    {apkFile ? (
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-bold text-zinc-950 break-all">
+                          {apkFile.name}
+                        </p>
+                        <p className="text-xs text-zinc-500 tabular-nums">
+                          {(apkFile.size / (1024 * 1024)).toFixed(2).replace('.', ',')} MB · Clique
+                          para trocar
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-semibold text-zinc-800">
+                          Toque para escolher o arquivo .apk no seu celular ou computador
+                        </p>
+                        <p className="text-xs text-zinc-500">Somente pacotes Android (.apk)</p>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept=".apk,application/vnd.android.package-archive"
+                      disabled={uploadingApk}
+                      onChange={(e) => {
+                        const selected = e.target.files?.[0] || null;
+                        setApkFile(selected);
+                        setAppReleaseError('');
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="apk-version-input"
+                      className="block text-sm font-semibold text-zinc-800 mb-1.5"
+                    >
+                      Versão do aplicativo
+                    </label>
+                    <input
+                      id="apk-version-input"
+                      type="text"
+                      required
+                      disabled={uploadingApk}
+                      value={apkVersion}
+                      onChange={(e) => setApkVersion(e.target.value)}
+                      placeholder="Ex: 1.0.1"
+                      className="w-full px-4 py-2.5 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="apk-notes-input"
+                      className="block text-sm font-semibold text-zinc-800 mb-1.5"
+                    >
+                      Notas da atualização (opcional)
+                    </label>
+                    <input
+                      id="apk-notes-input"
+                      type="text"
+                      disabled={uploadingApk}
+                      value={apkNotes}
+                      onChange={(e) => setApkNotes(e.target.value)}
+                      placeholder="Ex: Melhorias no envio da ficha"
+                      className="w-full px-4 py-2.5 text-sm border border-zinc-300 rounded-xl focus:outline-none focus:border-[#C8102E]"
+                    />
+                  </div>
+                </div>
+
+                {uploadingApk && apkProgress && (
+                  <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-semibold text-zinc-800">
+                      <span>
+                        {apkProgress.phase === 'hashing'
+                          ? 'Validando pacote APK...'
+                          : apkProgress.phase === 'committing'
+                          ? 'Finalizando e ativando nova versão...'
+                          : `Enviando parte ${apkProgress.currentChunk} de ${apkProgress.totalChunks}...`}
+                      </span>
+                      <span className="tabular-nums">{apkProgress.percent}%</span>
+                    </div>
+                    <div className="h-2.5 bg-zinc-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#C8102E] transition-all duration-150"
+                        style={{ width: `${apkProgress.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={uploadingApk || !apkFile}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-[#C8102E] hover:bg-[#A00D24] rounded-xl disabled:opacity-50 cursor-pointer transition-colors"
+                >
+                  <UploadCloud className="w-4 h-4" aria-hidden="true" />
+                  {uploadingApk ? 'Enviando e salvando...' : 'Salvar novo APK'}
+                </button>
+              </form>
+            </div>
+
+            {/* Histórico de versões enviadas */}
+            {appReleasesData && appReleasesData.history.length > 0 && (
+              <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-200 flex items-center justify-between">
+                  <h3 className="font-display text-base font-extrabold text-zinc-950">
+                    Histórico de versões publicadas
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={loadAppReleases}
+                    disabled={loadingAppReleases}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 hover:text-zinc-950 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${loadingAppReleases ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                    Atualizar
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-600">
+                        <th className="py-3 px-4">Versão</th>
+                        <th className="py-3 px-4">Arquivo</th>
+                        <th className="py-3 px-4">Tamanho</th>
+                        <th className="py-3 px-4">Downloads</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Publicado em</th>
+                        <th className="py-3 px-4 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {appReleasesData.history.map((rel) => (
+                        <tr key={rel.id} className="hover:bg-zinc-50">
+                          <td className="py-3 px-4 font-bold text-zinc-950 tabular-nums">
+                            v{rel.version}
+                          </td>
+                          <td className="py-3 px-4 text-zinc-700">{rel.fileName}</td>
+                          <td className="py-3 px-4 text-zinc-600 tabular-nums">
+                            {(rel.sizeBytes / (1024 * 1024)).toFixed(2).replace('.', ',')} MB
+                          </td>
+                          <td className="py-3 px-4 text-zinc-700 tabular-nums">
+                            {rel.downloadCount}
+                          </td>
+                          <td className="py-3 px-4 text-xs font-bold">
+                            {rel.status === 'active' ? (
+                              <span className="text-[#01875F]">Ativo no site</span>
+                            ) : (
+                              <span className="text-zinc-500">Arquivado</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-xs text-zinc-600 tabular-nums">
+                            {formatDateTimeSaoPaulo(rel.publishedAt || rel.createdAt)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              disabled={deletingReleaseId === rel.id}
+                              onClick={() => handleDeleteAppRelease(rel.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg cursor-pointer disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                              Excluir
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-zinc-950 tracking-tight">
+                  Candidaturas recebidas ({session.channelPath})
+                </h1>
             <p className="text-sm text-zinc-600">
               {session.channelPath === '/vagas2'
                 ? 'Inscrições recebidas pelo link /vagas2 e pelo site principal (destacadas em cor).'
@@ -923,6 +1413,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* FICHA LATERAL COMPLETA (DRAWER) */}

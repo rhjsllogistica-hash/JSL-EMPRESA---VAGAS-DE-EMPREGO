@@ -46,6 +46,18 @@ export function Footer({ settings, channelPrefix, onNavigate }: FooterProps) {
               </li>
               <li>
                 <a
+                  href={buildChannelPath(channelPrefix, '/aplicativo')}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNavigate('/aplicativo');
+                  }}
+                  className="hover:text-white transition-colors"
+                >
+                  Baixar Aplicativo (Android)
+                </a>
+              </li>
+              <li>
+                <a
                   href={buildChannelPath(channelPrefix, '/privacidade')}
                   onClick={(e) => {
                     e.preventDefault();
