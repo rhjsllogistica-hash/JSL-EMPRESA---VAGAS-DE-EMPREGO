@@ -37,6 +37,10 @@ function resolveInitialJobFromUrl(): JobPosting | null {
   }
 }
 
+function isMainEntryRoute(route: string): boolean {
+  return route === '/' || route === '';
+}
+
 export default function App() {
   const [pathname, setPathname] = useState<string>(() => window.location.pathname || '/');
   const [selectedJob, setSelectedJob] = useState<JobPosting | null>(resolveInitialJobFromUrl);
@@ -48,12 +52,13 @@ export default function App() {
   const parsed = parseAppLocation(pathname);
 
   const [checkingIpStatus, setCheckingIpStatus] = useState<boolean>(
-    () => parsed.route !== '/painel' && parsed.route !== '/aplicativo'
+    () => isMainEntryRoute(parsed.route) || parsed.route === '/confirmacao'
   );
   const [savedDraft, setSavedDraft] = useState<SavedApplicationDraft | null>(() =>
     loadApplicationDraft(parsed.channelPrefix)
   );
   const hasAutoResumedRef = useRef(false);
+  const checkedChannelRef = useRef<string | null>(null);
 
   useEffect(() => {
     const onPopState = () => {
@@ -90,9 +95,16 @@ export default function App() {
     [parsed.channelPrefix]
   );
 
-  // Ao abrir o app (rotas públicas), verifica no servidor se este IP já enviou candidatura neste canal
+  // Ao entrar na URL principal (/, /vagas1, /vagas2) ou recarregar /confirmacao, verifica se este IP já enviou candidatura
   useEffect(() => {
-    if (parsed.route === '/painel' || parsed.route === '/aplicativo') {
+    const shouldCheckIp = isMainEntryRoute(parsed.route) || parsed.route === '/confirmacao';
+    if (!shouldCheckIp) {
+      setCheckingIpStatus(false);
+      return;
+    }
+
+    const channelKey = parsed.channelPrefix ?? '__main__';
+    if (checkedChannelRef.current === channelKey && (lockedByIp || receipt)) {
       setCheckingIpStatus(false);
       return;
     }
@@ -103,18 +115,15 @@ export default function App() {
     fetchMyApplicationStatus(parsed.channelPrefix)
       .then((res) => {
         if (cancelled) return;
+        checkedChannelRef.current = channelKey;
+        const latestRoute = parseAppLocation(window.location.pathname || '/').route;
+
         if (res.submitted && res.receipt) {
           clearApplicationDraft(parsed.channelPrefix);
           setSavedDraft(null);
           setReceipt(res.receipt);
           setLockedByIp(true);
-          if (
-            parsed.route !== '/privacidade' &&
-            parsed.route !== '/termos' &&
-            parsed.route !== '/contato' &&
-            parsed.route !== '/aplicativo' &&
-            parsed.route !== '/confirmacao'
-          ) {
+          if (isMainEntryRoute(latestRoute)) {
             replaceRoute('/confirmacao');
           }
           return;
@@ -129,12 +138,7 @@ export default function App() {
           const draftJob = jobs.find((j) => j.id === draft.jobId);
           if (draftJob) {
             setSelectedJob(draftJob);
-            if (
-              parsed.route === '/' ||
-              parsed.route === '' ||
-              parsed.route === '/vagas' ||
-              parsed.route === '/candidatura'
-            ) {
+            if (isMainEntryRoute(latestRoute)) {
               replaceRoute('/candidatura', `?vaga=${encodeURIComponent(draftJob.slug)}`);
             }
           }
@@ -155,18 +159,12 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parsed.channelPrefix]);
+  }, [parsed.channelPrefix, parsed.route]);
 
-  // Se o candidato já tem candidatura registrada por este IP, garante que páginas públicas principais levem à confirmação
+  // Se o candidato já tem candidatura registrada por este IP, redireciona para /confirmacao apenas quando entrar na URL principal
   useEffect(() => {
-    if (!lockedByIp || parsed.route === '/painel' || parsed.route === '/aplicativo') return;
-    if (
-      parsed.route !== '/privacidade' &&
-      parsed.route !== '/termos' &&
-      parsed.route !== '/contato' &&
-      parsed.route !== '/aplicativo' &&
-      parsed.route !== '/confirmacao'
-    ) {
+    if (!lockedByIp) return;
+    if (isMainEntryRoute(parsed.route)) {
       replaceRoute('/confirmacao');
     }
   }, [lockedByIp, parsed.route, replaceRoute]);
@@ -224,9 +222,7 @@ export default function App() {
 
     if (
       checkingIpStatus &&
-      route !== '/privacidade' &&
-      route !== '/termos' &&
-      route !== '/contato'
+      (isMainEntryRoute(route) || route === '/confirmacao')
     ) {
       return (
         <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-3">

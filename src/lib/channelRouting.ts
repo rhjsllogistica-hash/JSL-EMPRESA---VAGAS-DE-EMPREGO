@@ -11,26 +11,28 @@ export function parseAppLocation(pathname: string): ParsedLocation {
 
   if (clean === '/vagas1' || clean.startsWith('/vagas1/')) {
     const rest = clean.slice('/vagas1'.length) || '/';
+    const normRest = rest.startsWith('/') ? rest : `/${rest}`;
     return {
       channelPrefix: '/vagas1',
       tenantId: 1,
-      route: rest.startsWith('/') ? rest : `/${rest}`,
+      route: normRest.toLowerCase() === '/aplicativo' ? '/aplicativo' : normRest,
     };
   }
 
   if (clean === '/vagas2' || clean.startsWith('/vagas2/')) {
     const rest = clean.slice('/vagas2'.length) || '/';
+    const normRest = rest.startsWith('/') ? rest : `/${rest}`;
     return {
       channelPrefix: '/vagas2',
       tenantId: 2,
-      route: rest.startsWith('/') ? rest : `/${rest}`,
+      route: normRest.toLowerCase() === '/aplicativo' ? '/aplicativo' : normRest,
     };
   }
 
   return {
     channelPrefix: null,
     tenantId: null,
-    route: clean,
+    route: clean.toLowerCase() === '/aplicativo' ? '/aplicativo' : clean,
   };
 }
 
